@@ -987,7 +987,6 @@ void CameraSection() {
 
     struct Fx { const char* label; bool* on; const char* type; const char* help; };
     Fx fx[] = {
-        {"Sunglasses (shades)", &M.sunglass, "CameraSunglassFade", "Darkens the view like sunglasses."},
         {"Random tint", &M.tint, "CameraRandomTint", "Keeps tinting the view with changing colours."},
         {"Surreal blue", &M.surreal, "CameraSurrealBlueEffect", "Blue dream-like look."},
         {"Caustics", &M.caustics, "CameraCausticsEffect", "Underwater light ripples."},
@@ -1044,15 +1043,13 @@ void CameraSection() {
         if (ImGui::Button("Reset##lens", ImVec2(130, 0))) M.lens = -1, StopEvent("Lens back to the level's", "lens");
     }
 
-    Section("FREE CAMERA (experimental)", "The game's developer cameras; they may do nothing in a release build.");
-    if (Toggle("Drone mode (debug camera)", &M.debugCam, "DebugCamera.")) {
-        if (M.debugCam) StartEvent("Debug camera on", "debugcam", "DebugCamera", {});
-        else StopEvent("Debug camera off", "debugcam");
-    }
+    Section("FREE CAMERA (experimental)", "The game's manual camera; it may do nothing in a release build.");
     if (Toggle("Manual camera", &M.manualCam, "ManualControlCamera.")) {
         if (M.manualCam) StartEvent("Manual camera on", "manualcam", "ManualControlCamera", {});
         else StopEvent("Manual camera off", "manualcam");
     }
+    Dim("Drone mode: the game's DebugCamera isn't an event, so it can't be started from here. Sunglasses was "
+        "removed: it crashed the game when switched off (it has settings Offset Lab can't see to fill in).");
     Dim("First-person view and unlimited zoom need changes to the game's camera code that I haven't checked for "
         "0.35.2 yet; they'll come in a later version.");
 }
@@ -1067,10 +1064,18 @@ void WorldSection() {
                "Hides the visible ground (collision stays). TheVoid's world.hide_terrain switch."))
         if (!SetSwitch("Hide terrain", kTerrainSwitch, F.terrainOff)) F.terrainOff = !F.terrainOff;
     if (Toggle("Disable reset barrier", &F.barrierOff,
-               "Experimental: sets the level's boundary plane to none (AvatarSetBoundaryPlane left empty), so "
-               "going past it shouldn't reset you. Switch off to give the level its plane back.")) {
-        if (F.barrierOff) StartEvent("Reset barrier off", "barrier", "AvatarSetBoundaryPlane", {});
-        else StopEvent("Reset barrier back", "barrier");
+               "Experimental: moves the level's reset plane far below the world (the game needs a marker for it: "
+               "with none it stops with \"No marker provided for boundary plane\"), so going out of bounds "
+               "shouldn't reset you. Switch off to give the level its own plane back.")) {
+        if (F.barrierOff) {
+            Run("", std::string(kPrelude) +
+                        "OffsetLab.lowM = OffsetLab.lowM or game:markerBarn():CreateMarker(0)\n"
+                        "OffsetLab.lowM:pos({0, -100000, 0})\n");
+            StartEvent("Reset barrier moved far down", "barrier", "AvatarSetBoundaryPlane",
+                       {{"planeMarker", "OffsetLab.lowM", ""}});
+        } else {
+            StopEvent("Reset barrier back", "barrier");
+        }
     }
     if (Toggle("Disable shadow", &F.shadowOff, "Removes your avatar's shadow.")) {
         if (F.shadowOff) StartEvent("Shadow off", "shadow", "AvatarDisableShadow", {});
@@ -1090,6 +1095,9 @@ void ShoutSection() {
         F.voicesRead = true;
         F.voices = EnumOptions("OnShout", "voiceType");
         if (F.voices.empty()) F.voices = EnumOptions("AvatarOutfitRegion", "voice");
+        // "…_Count" is the number of voices, not a voice
+        F.voices.erase(std::remove_if(F.voices.begin(), F.voices.end(), [](const std::string& v) {
+            return v.size() > 6 && v.compare(v.size() - 6, 6, "_Count") == 0; }), F.voices.end());
     }
     ImGui::ColorEdit3("Colour", F.shoutColor);
     ImGui::SameLine();
