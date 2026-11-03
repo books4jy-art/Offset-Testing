@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <mutex>
 
 namespace lab {
@@ -33,6 +34,51 @@ const LabEnum& Enum(size_t i) { return kEnums[i]; }
 uint32_t EnumOptionAddr(size_t i) { return kEnumOptions[i]; }
 uint32_t NoteAddr(size_t i) { return kNotes[i]; }
 uint32_t RegisterFunction() { return LAB_REGISTER_FN; }
+
+// ---------------------------------------------------------------- class tree
+
+static std::map<uint32_t, size_t> gByObject;  // type object -> type index
+
+static uint32_t ParentOf(uint32_t object) {
+    auto it = gByObject.find(object);
+    if (it != gByObject.end() && kTypes[it->second].parentObject)
+        return kTypes[it->second].parentObject;
+    // not known from the file: the type object keeps its parent accessor at +0x30 (set when the game registers it)
+    uintptr_t base = GameBase(), accessor = 0;
+    if (!base || !ReadMemory(base + object + 0x30, &accessor, sizeof accessor))
+        return 0;
+    if (!accessor)
+        return 0xFFFFFFFF;  // no parent: a root type
+    uintptr_t off = accessor - base;
+    for (const auto& a : kAccessorParents)
+        if (a[0] && a[0] == off)
+            return a[1];
+    return 0;
+}
+
+EventStatus EventStatusOf(size_t index, std::vector<size_t>* ancestors) {
+    if (gByObject.empty())
+        for (size_t i = 0; i < LAB_TYPE_COUNT; i++)
+            if (kTypes[i].typeObject) gByObject[kTypes[i].typeObject] = i;
+    uint32_t object = kTypes[index].typeObject;
+    if (!object)
+        return kEventUnknown;
+    if (object == LAB_EVENT_TYPE_OBJECT || object == LAB_ROOT_TYPE_OBJECT)
+        return kNotEvent;  // the bases themselves
+    for (int depth = 0; depth < 32; depth++) {
+        uint32_t parent = ParentOf(object);
+        if (parent == LAB_EVENT_TYPE_OBJECT)
+            return kIsEvent;
+        if (parent == LAB_ROOT_TYPE_OBJECT || parent == 0xFFFFFFFF)
+            return kNotEvent;  // reached the root without passing Event
+        if (!parent)
+            return kEventUnknown;  // the chain can't be followed
+        auto it = gByObject.find(parent);
+        if (ancestors && it != gByObject.end()) ancestors->push_back(it->second);
+        object = parent;
+    }
+    return kEventUnknown;
+}
 
 // Sky 0.35.2 addresses (offsets from the start of libBootloader.so)
 namespace addr {

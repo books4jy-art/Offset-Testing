@@ -213,8 +213,8 @@ struct State {
     int memRows = 16;
     // lua
     char lua[4096] = "-- Lua runs inside the game. Example:\n"
-                     "local e = game:eventBarn():AddEventByMetaName(\"SetCameraShake\")\n"
-                     "e:force(1.0)\ne:duration(2.0)\ne:Start()\n";
+                     "local e = game:eventBarn():AddEventByMetaName(\"SetBulletTime\")\n"
+                     "e:speed(0.3)\ne:duration(3.0)\ne:Start()\n";
     std::vector<std::string> luaHistory;
     // native functions
     char fnSearch[96] = "";
@@ -230,6 +230,8 @@ struct State {
     bool lastFiredShown = false;
     std::vector<std::string> crashed;  // functions marked as crashing the game
     std::string pendingRisky;          // function waiting for "Fire anyway"
+    std::vector<int8_t> evStatus;      // EventStatus per type
+    bool eventsOnly = true;
 } S;
 
 bool IsCrashed(const std::string& name) {
@@ -283,7 +285,15 @@ void LoadNames() {
         S.titles[i] = Friendly(s);
     }
     S.namesLoaded = true;
-    Log("Read %d type names (%d match 0.35.2, %d unreadable)", (int)n, S.verified, S.unreadable);
+    S.evStatus.resize(n);
+    int events = 0, unknown = 0;
+    for (size_t i = 0; i < n; i++) {
+        S.evStatus[i] = (int8_t)EventStatusOf(i);
+        events += S.evStatus[i] == kIsEvent;
+        unknown += S.evStatus[i] == kEventUnknown;
+    }
+    Log("Read %d type names (%d match 0.35.2, %d unreadable); %d are events, %d unknown", (int)n, S.verified,
+        S.unreadable, events, unknown);
 }
 
 void OpenMemory(uintptr_t offset) {
@@ -598,6 +608,25 @@ void Details(int i) {
         ImGui::TextColored(kAmber300, "Server type: turn on \"Server types\" at the top to fire it.");
         ImGui::BeginDisabled();
     }
+    // only events can be fired: the game aborts when asked to fire anything else
+    int ev = S.evStatus.empty() ? kEventUnknown : S.evStatus[i];
+    if (ev == kNotEvent) {
+        std::vector<size_t> anc;
+        EventStatusOf(i, &anc);
+        std::string chain;
+        for (size_t k = 0; k < anc.size() && k < 4; k++) chain += (k ? " > " : "") + Friendly(S.names[anc[k]]);
+        ImGui::TextColored(kRed300, "Not an event%s%s.", chain.empty() ? "" : ": it's a kind of ", chain.c_str());
+        Dim("The game builds these itself. Asking it to fire one makes the game stop (abort), so Fire is off. "
+            "You can still look at its settings and offsets.");
+        if (ImGui::Button("Copy as Lua")) {
+            snprintf(S.lua, sizeof S.lua, "%s", FireScript(i).c_str());
+            S.openTab = 1;
+        }
+        goto offsets;
+    }
+    if (ev == kEventUnknown)
+        ImGui::TextColored(kAmber300, "Can't tell whether this is an event. If it isn't, the game will stop (abort).");
+    {
     // object settings left empty are the usual cause of the game crashing a little after firing
     std::vector<std::string> emptyObjects;
     for (uint32_t k = 0; k < t.settingCount; k++) {
@@ -613,7 +642,7 @@ void Details(int i) {
         ImGui::TextColored(kAmber300, "Empty object settings (%s): the game may crash using them. Fill them in, or fire anyway.",
                            list.c_str());
     }
-    bool risky = !emptyObjects.empty() || IsCrashed(S.names[i]);
+    bool risky = !emptyObjects.empty() || IsCrashed(S.names[i]) || ev == kEventUnknown;
     if (risky) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.25f, 0.25f, 1.f));
@@ -645,7 +674,9 @@ void Details(int i) {
         S.openTab = 1;
     }
     if (!S.lastResult.empty()) ImGui::TextColored(S.lastOk ? kSky300 : kRed300, "%s", S.lastResult.c_str());
+    }
 
+offsets:
     ImGui::Spacing();
     if (ImGui::CollapsingHeader("Offsets")) {
         auto row = [](const char* k, uintptr_t v) {
@@ -717,17 +748,23 @@ void GameFunctionsTab() {
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##search", "Search", S.search, sizeof S.search);
 
+    ImGui::Checkbox("Events only", &S.eventsOnly);
+    ImGui::SameLine();
+    Dim("(only events can be fired)");
+
     std::vector<int> rows;
     uintptr_t want = 0;
     bool hexSearch = S.search[0] == '0' && (S.search[1] == 'x' || S.search[1] == 'X') && ParseHex(S.search, want);
     for (size_t i = 0; i < n; i++) {
         if (S.area >= 0 && t[i].area != S.area) continue;
+        if (S.eventsOnly && S.evStatus[i] != kIsEvent) continue;
         if (hexSearch ? (t[i].registerAt != want && t[i].typeObject != want)
                       : !(Contains(S.titles[i], S.search) || Contains(S.names[i], S.search)))
             continue;
         rows.push_back((int)i);
     }
-    Dim("%zu of %zu game functions  ·  %d names checked against 0.35.2", rows.size(), n, S.verified);
+    int nEvents = (int)std::count(S.evStatus.begin(), S.evStatus.end(), (int8_t)kIsEvent);
+    Dim("%zu shown  ·  %d events of %zu types  ·  %d names checked against 0.35.2", rows.size(), nEvents, n, S.verified);
 
     // list: two-line rows (readable title, then the game's name and area)
     float listH = ImGui::GetContentRegionAvail().y * 0.38f;
@@ -744,7 +781,8 @@ void GameFunctionsTab() {
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 bool crashed = IsCrashed(S.names[i]);
                 dl->AddText(ImVec2(p.x + 8, p.y + 5), ImGui::GetColorU32(crashed ? kRed300 : White(0.97f)), S.titles[i].c_str());
-                std::string sub = S.names[i] + "  ·  " + kAreaNames[t[i].area] + (crashed ? "  ·  crashed before" : "");
+                const char* evLabel = S.evStatus[i] == kIsEvent ? "event" : S.evStatus[i] == kNotEvent ? "not an event" : "event?";
+                std::string sub = S.names[i] + "  ·  " + evLabel + "  ·  " + kAreaNames[t[i].area] + (crashed ? "  ·  crashed before" : "");
                 dl->AddText(ImVec2(p.x + 8, p.y + 5 + lineH), ImGui::GetColorU32(crashed ? kRed300 : t[i].area == kAreaServer ? kAmber300 : White(0.62f)),
                             sub.c_str());
                 ImGui::PopID();

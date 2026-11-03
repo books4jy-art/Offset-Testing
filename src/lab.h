@@ -18,6 +18,7 @@ struct LabType {
     uint8_t  area;         // index into kAreaNames
     uint32_t settingFirst, settingCount;  // range in the settings table
     uint16_t noteFirst, noteCount;        // range in the notes table
+    uint32_t parentObject;                // parent type's object (0 = only known at runtime)
 };
 
 // One setting of a type, from the game's own setting record.
@@ -44,6 +45,10 @@ const LabEnum& Enum(size_t i);
 uint32_t EnumOptionAddr(size_t i);
 uint32_t NoteAddr(size_t i);
 uint32_t RegisterFunction();
+
+// Whether a type is an event (descends from the game's Event type). The game aborts if asked to fire anything else.
+enum EventStatus { kIsEvent, kNotEvent, kEventUnknown };
+EventStatus EventStatusOf(size_t index, std::vector<size_t>* ancestors = nullptr);
 
 // ---- game ----
 uintptr_t GameBase();                        // load address of libBootloader.so, 0 if not loaded
