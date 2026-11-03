@@ -16,7 +16,9 @@
 #include <string>
 #include <vector>
 
+#include "canvas_api.h"
 #include "imgui.h"
+#include "json.h"
 
 namespace lab {
 
@@ -75,10 +77,11 @@ std::vector<std::string> EnumOptions(const char* type, const char* setting) {
 }
 
 // False when the game says this type isn't an event (firing it would abort the game).
-bool SafeToFire(const char* type) {
+bool SafeToFire(const char* type, bool allowUnlisted = false) {
     IndexTypes();
     auto it = gTypeIndex.find(type);
     if (it == gTypeIndex.end()) {
+        if (allowUnlisted) return true;  // registered in a way the generator doesn't see; the game returns nil if absent
         Log("Feature: %s isn't in this game version", type);
         return false;
     }
@@ -112,10 +115,11 @@ bool Run(const std::string& what, const std::string& script) {
 }
 
 // Starts event `type` with the settings, keeping it as OffsetLab[key] (an earlier one under the key is stopped).
-bool StartEvent(const std::string& what, const char* key, const char* type, const std::vector<Set>& sets) {
-    if (!SafeToFire(type)) return false;
+bool StartEvent(const std::string& what, const std::string& key, const char* type, const std::vector<Set>& sets,
+                bool allowUnlisted = false) {
+    if (!SafeToFire(type, allowUnlisted)) return false;
     std::string s = kPrelude;
-    s += "stop(\"" + std::string(key) + "\")\n";
+    s += "stop(\"" + key + "\")\n";
     s += "local e = game:eventBarn():AddEventByMetaName(\"" + std::string(type) + "\")\n";
     s += "if not e then error(\"" + std::string(type) + " not found\") end\n";
     s += "local bad = {}\n";
@@ -128,13 +132,13 @@ bool StartEvent(const std::string& what, const char* key, const char* type, cons
             s += "bad[#bad+1] = \"" + x.name + "\" ";
         s += "end\n";
     }
-    s += "e:Start()\nOffsetLab[\"" + std::string(key) + "\"] = e\n";
+    s += "e:Start()\nOffsetLab[\"" + key + "\"] = e\n";
     s += "if #bad > 0 and print then pcall(print, \"Offset Lab: " + std::string(type) +
          " didn't take \" .. table.concat(bad, \", \")) end\n";
     return Run(what, s);
 }
 
-bool StopEvent(const std::string& what, const char* key) {
+bool StopEvent(const std::string& what, const std::string& key) {
     return Run(what, std::string(kPrelude) + "stop(\"" + key + "\")\n");
 }
 
@@ -348,173 +352,710 @@ void SpellButton(const Spell& s) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.id);
 }
 
+// ---------------------------------------------------------------- icons and game data (through Canvas)
+
+// Draws one of the game's UI icons; false (nothing drawn) when the game has no icon by that name.
+bool DrawIcon(const std::string& name, float size) {
+    if (name.empty()) return false;
+    UIIcon icon{};
+    icon.textureId = (ImTextureID)-1;
+    IconLoader::getUIIcon(name, &icon);
+    if (icon.textureId == (ImTextureID)-1 || !icon.textureId) return false;
+    ImGui::Image(icon.textureId, ImVec2(size, size), icon.uv0, icon.uv1);
+    return true;
+}
+
+// Icon (or an empty square of the same size) and then a button with the label on the same line.
+bool IconRow(const std::string& icon, const std::string& label, const char* id) {
+    float sz = ImGui::GetFrameHeight();
+    ImGui::PushID(id);
+    if (!DrawIcon(icon, sz)) ImGui::Dummy(ImVec2(sz, sz));
+    ImGui::SameLine();
+    bool r = ImGui::Button(label.c_str(), ImVec2(-1, 0));
+    ImGui::PopID();
+    return r;
+}
+
+const Json& Asset(const char* path, Json& cache, bool& tried) {
+    if (!tried && GameBase()) {
+        tried = true;
+        char buf[256];
+        snprintf(buf, sizeof buf, "%s", path);
+        const char* text = Cipher::read_asset(buf);
+        if (text) cache = Json::Parse(text);
+        Log("%s: %s", path, !text ? "couldn't be read" : cache.kind == Json::kNull ? "couldn't be parsed" : "loaded");
+    }
+    return cache;
+}
+
+const std::vector<Json>* ArrayOf(const Json& j, const char* key) {
+    if (j.kind == Json::kArray) return &j.a;
+    if (const Json* v = j.get(key)) if (v->kind == Json::kArray) return &v->a;
+    return nullptr;
+}
+
+std::string Lower(std::string s) {
+    for (auto& c : s) c = (char)tolower((unsigned char)c);
+    return s;
+}
+
+// ---------------------------------------------------------------- extra state for the newer features
+
+struct More {
+    // server (off at every start)
+    bool server = false;
+    // animation
+    bool pause = false;
+    bool tpose = false;
+    double tposeHoldAt = 0;
+    char anim[64] = "AirplaneArmsEmote_1";
+    // follow (Lua probe)
+    std::string probe;
+    // outfits
+    Json outfitDefs;
+    bool outfitTried = false;
+    std::string outfitType;
+    bool npcOutfits = false;
+    char outfitFilter[64] = "";
+    // edit outfits
+    float height = 0.f, size = 0.f;
+    // neck
+    bool neck = false;
+    float neckSide = 0.f, neckUp = 0.f;
+    double neckNext = 0;
+    // pogo
+    float pogo = 8.f;
+    bool pogoKeep = false;
+    float pogoEvery = 1.f;
+    double pogoNext = 0;
+    // emotes
+    Json collectibles;
+    bool collectiblesTried = false;
+    int emoteLevel = 1;
+    float emoteSpeed = 1.f, emoteLoop = 0.f;
+    bool emoteMirror = false;
+    char emoteFilter[64] = "";
+    // camera
+    float shakeSpeed = 1.f, shakeForce = 1.f, shakeTime = 2.f;
+    bool filter = false;
+    int filterType = 0;
+    float filterAmount = 1.f;
+    bool filterInvert = false;
+    bool sunglass = false, tint = false, surreal = false, caustics = false, sketch = false, noBars = false;
+    bool rain = false;
+    float rainAmount = 0.5f, rainSize = 1.f, rainDensity = 1.f;
+    float slowmo = 1.f;
+    std::vector<std::string> lenses;
+    bool lensesRead = false;
+    int lens = -1;
+    bool debugCam = false, manualCam = false;
+    // auto walk
+    bool walk = false;
+    float walkSpeed = 3.f, walkDir = 0.f;
+} M;
+
+constexpr uint32_t kAvatarHeight = 0x313970C;  // TheVoid's player.avatar_height (0x31396FC in 0.35.1), -3..3
+constexpr uint32_t kAvatarScale = 0x3139710;   // TheVoid's player.avatar_scale (0x3139700 in 0.35.1), -3..3
+
+void SetFloatVar(const char* what, uint32_t off, float v) {
+    float cur = 0;
+    if (!GameBase() || !ReadMemory(GameBase() + off, &cur, 4) || !(cur >= -10.f && cur <= 10.f)) {
+        Log("%s: the value at 0x%X doesn't look right; not changed", what, off);
+        return;
+    }
+    bool ok = WriteGameMemory(off, &v, 4);
+    Log("%s %.2f%s", what, v, ok ? "" : " (write failed)");
+}
+
+void Walk() {
+    if (!M.walk) {
+        StopEvent("Auto walk off", "walk");
+        return;
+    }
+    float rad = M.walkDir * 3.14159265f / 180.f;
+    StartEvent("Auto walk " + Num(M.walkSpeed) + " at " + Num(M.walkDir) + " deg", "walk", "SetAvatarVelocity",
+               {{"velocityX", Num(M.walkSpeed * sinf(rad)), ""}, {"velocityZ", Num(M.walkSpeed * cosf(rad)), ""},
+                {"setVelocityX", "true", ""}, {"setVelocityZ", "true", ""}, {"fireOnce", "false", ""}});
+}
+
+void Bounce(bool quiet) {
+    StartEvent(quiet ? "" : "Bounce " + Num(M.pogo), "pogo", "SetAvatarMinYSpeed",
+               {{"minYSpeed", Num(M.pogo), ""}, {"forceTakeoff", "true", ""}, {"fireOnce", "true", ""}});
+}
+
+// Neck: the head looks at a marker placed at the camera, moved by the two sliders (experimental: needs the marker's
+// position to be readable from Lua; if not, the head just follows the camera).
+void Neck(bool quiet) {
+    if (!SafeToFire("GetCameraTransform") || !SafeToFire("AvatarLookAt")) return;
+    std::string s = kPrelude;
+    s += "local mb = game:markerBarn()\n"
+         "OffsetLab.camM = OffsetLab.camM or mb:CreateMarker(0)\n"
+         "OffsetLab.neckM = OffsetLab.neckM or mb:CreateMarker(0)\n"
+         "if not OffsetLab.neckcam then local g = game:eventBarn():AddEventByMetaName(\"GetCameraTransform\")\n"
+         "  pcall(function() g:target(OffsetLab.camM) end); pcall(function() g:fireOnce(false) end); g:Start()\n"
+         "  OffsetLab.neckcam = g end\n"
+         "local target = OffsetLab.camM\n"
+         "local ok, p = pcall(function() return OffsetLab.camM:pos() end)\n"
+         "if ok and type(p) == \"table\" then\n"
+         "  local x, y, z = p[1] or p.x, p[2] or p.y, p[3] or p.z\n"
+         "  if x and y and z then pcall(function() OffsetLab.neckM:pos({x + " + Num(M.neckSide) + ", y + " +
+         Num(M.neckUp) + ", z}) end); target = OffsetLab.neckM end\n"
+         "end\n"
+         "if not OffsetLab.neck then local e = game:eventBarn():AddEventByMetaName(\"AvatarLookAt\")\n"
+         "  pcall(function() e:target(target) end); pcall(function() e:overwriteAnim(true) end); e:Start()\n"
+         "  OffsetLab.neck = e end\n";
+    Run(quiet ? "" : "Neck turn on", s);
+}
+
+void NeckOff() { StopEvent("Neck turn off", "neck"), StopEvent("", "neckcam"); }
+
+void ProbeLua() {
+    std::string path = DataPath("offsetlab_lua_api.txt");
+    if (path.empty()) {
+        Log("Lua probe: no folder to write to");
+        return;
+    }
+    std::string s =
+        "local out = {}\n"
+        "local function keys(label, o)\n"
+        "  if o == nil then out[#out+1] = label .. \": none\"; return end\n"
+        "  local mt = getmetatable(o); local idx = mt and rawget(mt, \"__index\")\n"
+        "  if type(idx) == \"table\" then for k in pairs(idx) do out[#out+1] = label .. \":\" .. tostring(k) end end\n"
+        "  if type(mt) == \"table\" then for k in pairs(mt) do out[#out+1] = label .. \" meta \" .. tostring(k) end end\n"
+        "  if type(o) == \"table\" then for k in pairs(o) do out[#out+1] = label .. \".\" .. tostring(k) end end\n"
+        "end\n"
+        "keys(\"game\", game)\n"
+        "for _, b in ipairs({\"avatarBarn\", \"npcBarn\", \"playerBarn\", \"markerBarn\", \"levelBarn\", \"socialBarn\",\n"
+        "  \"friendBarn\", \"netBarn\", \"cameraBarn\", \"localAvatar\", \"avatar\", \"player\"}) do\n"
+        "  local ok, v = pcall(function() return game[b](game) end)\n"
+        "  keys(b, ok and v or nil)\n"
+        "end\n"
+        "for k, v in pairs(_G) do out[#out+1] = \"_G.\" .. tostring(k) .. \" \" .. type(v) end\n"
+        "table.sort(out)\n"
+        "local f = io and io.open(" + Quote(path) + ", \"w\")\n"
+        "if not f then error(\"no file access from Lua\") end\n"
+        "f:write(table.concat(out, \"\\n\")); f:close()\n";
+    if (Run("Lua probe written to offsetlab_lua_api.txt", s)) M.probe = ReadTextFile(path);
+}
+
+// ---------------------------------------------------------------- sub-tabs
+
+void PlayerSection(bool inWorld) {
+    Section("MOVEMENT", nullptr);
+    ImGui::TextUnformatted("Player hover");
+    Dim("Lifts you off the ground and holds you up. The value is how fast you rise; set it low to hover "
+        "gently, Reset to land.");
+    if (Slider("hover", &F.hover, 0.f, 10.f, 0.f, "%.2f")) Hover();
+
+    if (Toggle("Antigravity", &F.antigravity, "No gravity for your avatar."))
+        StartEvent(F.antigravity ? "Antigravity on" : "Antigravity off", "gravity", "SetAvatarGravityMult",
+                   {{"gravityMult", F.antigravity ? "0" : "1", ""}});
+
+    ImGui::TextUnformatted("Speed up / down");
+    Dim("Walking and running speed (1 = normal).");
+    if (Slider("speed", &F.speed, 0.1f, 6.f, 1.f, "%.2fx"))
+        StartEvent("Speed " + Num(F.speed), "speed", "SetAvatarRunSpeedMult", {{"runSpeed", Num(F.speed), ""}});
+
+    ImGui::TextUnformatted("Auto walk");
+    Dim("Moves you at a set speed in a fixed direction (degrees around the world, 0 = the level's forward).");
+    if (ImGui::Checkbox("Auto walk on", &M.walk)) Walk();
+    if (Slider("walkspeed", &M.walkSpeed, 0.f, 20.f, 3.f, "speed %.1f") && M.walk) Walk();
+    if (Slider("walkdir", &M.walkDir, 0.f, 360.f, 0.f, "%.0f deg") && M.walk) Walk();
+
+    ImGui::TextUnformatted("Pogo stick");
+    Dim("Bounces you up at this speed: higher = farther jumps. Bounce once, or keep bouncing.");
+    Slider("pogo", &M.pogo, 1.f, 60.f, 8.f, "%.1f");
+    if (ImGui::Button("Bounce", ImVec2(200, 0))) Bounce(false);
+    ImGui::SameLine();
+    ImGui::Checkbox("Keep bouncing", &M.pogoKeep);
+    Slider("pogoevery", &M.pogoEvery, 0.2f, 5.f, 1.f, "every %.1f s");
+
+    if (Toggle("Scatter", &F.scatter, "Keeps letting go of hand-holds and carries (yours and others' on you).") &&
+        !F.scatter)
+        StopEvent("Scatter off", "scatter");
+    if (Toggle("Crawl mode", &F.crawl, "Your avatar crawls.")) {
+        if (F.crawl) StartEvent("Crawl on", "crawl", "AvatarCrawl", {{"crawlAmount", "1.0", ""}});
+        else StopEvent("Crawl off", "crawl");
+    }
+    if (Toggle("Force flight", &F.flight, "Keeps you in flight mode while on.")) {
+        if (F.flight) StartEvent("Force flight on", "flight", "AvatarForceEnableFlightMode", {{"fireOnce", "false", ""}});
+        else StopEvent("Force flight off", "flight");
+    }
+    if (Toggle("Walk under water", &F.walkUnderWater, "Walk along the bottom instead of swimming.")) {
+        if (F.walkUnderWater) StartEvent("Walk under water on", "water", "WalkUnderWater", {});
+        else StopEvent("Walk under water off", "water");
+    }
+    if (Toggle("Kill avatar", &F.kill, "Your avatar dies (the game's own death), and keeps dying while on.")) {
+        if (F.kill) StartEvent("Kill avatar on", "kill", "KillLocalAvatar", {});
+        else StopEvent("Kill avatar off", "kill");
+    }
+
+    Section("ANIMATION", nullptr);
+    if (Toggle("Stop all animations", &M.pause, "Freezes your avatar's animation (walking included) while on.")) {
+        if (M.pause) StartEvent("Animations stopped", "pause", "AvatarPauseAnim", {{"duration", "100000", ""}});
+        else StopEvent("Animations back", "pause");
+    }
+    if (Toggle("T-pose", &M.tpose, "Arms out, held still (the game's arms-out animation, then frozen).")) {
+        if (M.tpose) {
+            StartEvent("T-pose", "tpose", "PlayAvatarAnimSeq",
+                       {{"animName", Quote(M.anim), ""}, {"paradeEmote", "true", ""}, {"speedMultiplier", "1.0", ""}});
+            M.tposeHoldAt = ImGui::GetTime() + 0.7;
+        } else {
+            M.tposeHoldAt = 0;
+            StopEvent("", "tposehold");
+            StopEvent("T-pose off", "tpose");
+            StartEvent("", "animstop", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
+        }
+    }
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 220);
+    ImGui::InputText("##anim", M.anim, sizeof M.anim);
+    ImGui::SameLine();
+    if (ImGui::Button("Play", ImVec2(100, 0)))
+        StartEvent(std::string("Animation ") + M.anim, "anim", "PlayAvatarAnimSeq",
+                   {{"animName", Quote(M.anim), ""}, {"paradeEmote", "true", ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Stop", ImVec2(100, 0))) {
+        StopEvent("Animation stopped", "anim");
+        StartEvent("", "animstop", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
+    }
+    Dim("Any of the game's animation names (T-pose uses AirplaneArmsEmote_1).");
+
+    ImGui::TextUnformatted("Neck turn (experimental)");
+    Dim("Your head keeps looking at a point by the camera; the sliders move that point sideways and up/down. If the "
+        "game doesn't let Lua read the camera's position, the head just follows the camera.");
+    if (ImGui::Checkbox("Neck turn on", &M.neck)) {
+        if (M.neck) Neck(false);
+        else NeckOff();
+    }
+    Slider("neckside", &M.neckSide, -30.f, 30.f, 0.f, "sideways %.1f");
+    Slider("neckup", &M.neckUp, -30.f, 30.f, 0.f, "up/down %.1f");
+
+    Section("FOLLOW", nullptr);
+    ImGui::TextColored(kAmber300, "Not available yet.");
+    Dim("The game has no event that follows another player, NPC or creature, and Offset Lab can't read their "
+        "positions yet. To find a way in, Look for access lists what the game's Lua offers (players, NPCs, "
+        "barns) and saves it next to the mod as offsetlab_lua_api.txt. Send me that file and I'll build Follow on it.");
+    if (ImGui::Button("Look for access")) ProbeLua();
+    if (!M.probe.empty()) {
+        Dim("%zu bytes found:", M.probe.size());
+        ImGui::InputTextMultiline("##probe", &M.probe[0], M.probe.size() + 1, ImVec2(-1, 300),
+                                  ImGuiInputTextFlags_ReadOnly);
+    }
+    (void)inWorld;
+}
+
+void TransformSection() {
+    Section("TRANSFORM AVATAR", "Becomes a form for the time below (the game's spell effects, local only).");
+    Slider("Duration", &F.spellSeconds, 5.f, 600.f, 60.f, "%.0f s");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    ImGui::InputTextWithHint("##spf", "search", F.spellFilter, sizeof F.spellFilter);
+    ImGui::SameLine();
+    ImGui::Checkbox("Other spells too", &F.showAllSpells);
+    if (ImGui::BeginChild("##spells", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 9.5f), ImGuiChildFlags_Border)) {
+        for (const auto& s : kSpells) {
+            if (!s.form && !F.showAllSpells) continue;
+            if (F.spellFilter[0] && !strstr(s.id, F.spellFilter)) continue;
+            ImGui::PushID(s.id);
+            SpellButton(s);
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    ImGui::InputTextWithHint("##custom", "another spell id", F.customSpell, sizeof F.customSpell);
+    ImGui::SameLine();
+    if (ImGui::Button("Use") && F.customSpell[0])
+        StartEvent(std::string("Transform: ") + F.customSpell, "spell", "GrantSpell",
+                   {{"buffName", Quote(F.customSpell), ""}, {"duration", Num(F.spellSeconds), ""},
+                    {"networked", "false", ""}});
+    if (ImGui::Button("Back to normal (remove spells)"))
+        StopEvent("Transform stopped", "spell"),
+            StartEvent("All spell effects removed", "unspell", "RemoveSpell", {{"buffName", "\"\"", ""}});
+
+    Section("WINGED LIGHT", nullptr);
+    ImGui::TextUnformatted("Temporary (this game session only)");
+    Dim("Shows your cape at this wing level. Switch off or Reset to get your real level back.");
+    bool changed = ImGui::Checkbox("Use this level", &F.capeOn);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(160);
+    if (ImGui::InputInt("##lvl", &F.capeLevel)) changed = F.capeOn;
+    if (F.capeLevel < 0) F.capeLevel = 0;
+    int r = SliderInt("cape", &F.capeLevel, 0, 20, 7);
+    if (r == 2) F.capeOn = false, changed = true;
+    else if (r == 1 && F.capeOn) changed = true;
+    if (changed) {
+        if (F.capeOn)
+            StartEvent("Winged light level " + std::to_string(F.capeLevel), "cape", "AvatarOverrideCapeLevel",
+                       {{"level", std::to_string(F.capeLevel), ""}, {"autoRevertOnStop", "true", ""},
+                        {"restoreEnergyOnStop", "true", ""}});
+        else
+            StopEvent("Winged light back to your own", "cape");
+    }
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Permanent (server, experimental)");
+    Dim("Sends the game's own winged light requests to the server you're connected to; the server decides whether "
+        "anything changes. The game normally fills these in itself, so they may be refused or do nothing. Each "
+        "press is one request.");
+    ImGui::Checkbox("Server requests on (off at every start)", &M.server);
+    ImGui::BeginDisabled(!M.server);
+    static const char* kReq[][2] = {{"Collect", "CollectWingBuffServerRequestEvent"},
+                                    {"Deposit", "DepositWingBuffServerRequestEvent"},
+                                    {"Convert", "ConvertWingBuffsServerRequestEvent"},
+                                    {"Drop", "DropWingBuffServerRequestEvent"}};
+    for (int i = 0; i < 4; i++) {
+        if (i) ImGui::SameLine();
+        if (ImGui::Button(kReq[i][0], ImVec2(170, 0)))
+            StartEvent(std::string("Winged light request: ") + kReq[i][0], "wingreq", kReq[i][1], {});
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", kReq[i][1]);
+    }
+    ImGui::EndDisabled();
+}
+
+void OutfitsSection() {
+    const Json& defs = Asset("Data/Resources/OutfitDefs.json", M.outfitDefs, M.outfitTried);
+    const std::vector<Json>* list = ArrayOf(defs, "outfits");
+    Section("CHANGE OUTFITS", "Wears an outfit on your avatar (AvatarSetOutfit; local). The list is the game's own "
+                              "outfit file, NPC outfits included when switched on.");
+    if (!list) {
+        Dim("The outfit list couldn't be read from the game yet (enter the world and open this again).");
+        if (ImGui::Button("Try again")) M.outfitTried = false;
+        return;
+    }
+    // categories (outfit types), each with its first item's icon
+    std::vector<std::pair<std::string, std::string>> types;
+    for (const auto& it : *list) {
+        std::string t = Lower(it.str("type"));
+        if (t.empty()) continue;
+        bool have = false;
+        for (auto& x : types) have |= x.first == t;
+        if (!have) types.push_back({t, it.str("icon")});
+    }
+    if (M.outfitType.empty() && !types.empty()) M.outfitType = types[0].first;
+    float sz = ImGui::GetFrameHeight();
+    for (size_t i = 0; i < types.size(); i++) {
+        ImGui::PushID((int)i);
+        if (i % 5) ImGui::SameLine();
+        ImGui::BeginGroup();
+        bool sel = types[i].first == M.outfitType;
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.55f));
+        if (!DrawIcon(types[i].second, sz)) ImGui::Dummy(ImVec2(sz, sz));
+        ImGui::SameLine(0, 4);
+        if (ImGui::Button(types[i].first.c_str(), ImVec2(130, 0))) M.outfitType = types[i].first;
+        if (sel) ImGui::PopStyleColor();
+        ImGui::EndGroup();
+        ImGui::PopID();
+    }
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    ImGui::InputTextWithHint("##of", "search", M.outfitFilter, sizeof M.outfitFilter);
+    ImGui::SameLine();
+    ImGui::Checkbox("NPC outfits too", &M.npcOutfits);
+    std::vector<const Json*> rows;
+    std::string q = Lower(M.outfitFilter);
+    for (const auto& it : *list) {
+        if (Lower(it.str("type")) != M.outfitType) continue;
+        std::string name = it.str("name");
+        if (!M.npcOutfits && name.rfind("CharSkyKid", 0) != 0) continue;
+        if (!q.empty() && Lower(name).find(q) == std::string::npos) continue;
+        rows.push_back(&it);
+    }
+    Dim("%zu outfits", rows.size());
+    if (ImGui::BeginChild("##outfits", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 10.5f), ImGuiChildFlags_Border)) {
+        ImGuiListClipper clip;
+        clip.Begin((int)rows.size());
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                std::string name = rows[i]->str("name");
+                std::string label = name.rfind("CharSkyKid_", 0) == 0 ? name.substr(11) : name;
+                if (IconRow(rows[i]->str("icon"), label, name.c_str()))
+                    StartEvent("Outfit: " + name, "outfit_" + M.outfitType, "AvatarSetOutfit",
+                               {{M.outfitType, Quote(name), ""}});
+            }
+    }
+    ImGui::EndChild();
+    if (ImGui::Button("Back to my outfit")) {
+        for (const auto& t : types) StopEvent("", ("outfit_" + t.first).c_str());
+        Log("Outfit changes stopped");
+    }
+
+    Section("EDIT OUTFITS", "Your avatar's height and size (TheVoid's height/scale values; the game holds them to "
+                            "-3..3). Reset = 0.");
+    if (Slider("height", &M.height, -3.f, 3.f, 0.f, "height %.2f")) SetFloatVar("Avatar height", kAvatarHeight, M.height);
+    if (Slider("size", &M.size, -3.f, 3.f, 0.f, "size %.2f")) SetFloatVar("Avatar size", kAvatarScale, M.size);
+    Dim("Moving single outfit pieces off their places: the game only offers that in its developer outfit editor, "
+        "which isn't reachable yet.");
+}
+
+void EmotesSection() {
+    const Json& defs = Asset("Data/Resources/CollectibleDefs.json", M.collectibles, M.collectiblesTried);
+    const std::vector<Json>* list = ArrayOf(defs, "collectibles");
+    if (!list) list = ArrayOf(defs, "items");
+    Section("EMOTES", "Plays any emote on your avatar (AvatarPlayEmote), with level, speed and loop time.");
+    SliderInt("level", &M.emoteLevel, 1, 6, 1);
+    Slider("espeed", &M.emoteSpeed, 0.1f, 4.f, 1.f, "speed %.2f");
+    Slider("eloop", &M.emoteLoop, 0.f, 30.f, 0.f, M.emoteLoop == 0.f ? "loop: forever" : "loop %.1f s");
+    ImGui::Checkbox("Mirror", &M.emoteMirror);
+    ImGui::SameLine();
+    if (ImGui::Button("Stop emote")) StopEvent("Emote stopped", "emote");
+    if (!list) {
+        Dim("The emote list couldn't be read from the game yet (enter the world and open this again).");
+        if (ImGui::Button("Try again")) M.collectiblesTried = false;
+        return;
+    }
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##ef", "search", M.emoteFilter, sizeof M.emoteFilter);
+    std::vector<const Json*> rows;
+    std::string q = Lower(M.emoteFilter);
+    for (const auto& it : *list) {
+        if (Lower(it.str("type")) != "emote") continue;
+        if (!q.empty() && Lower(it.str("name")).find(q) == std::string::npos) continue;
+        rows.push_back(&it);
+    }
+    if (ImGui::BeginChild("##emotes", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 12.5f), ImGuiChildFlags_Border)) {
+        ImGuiListClipper clip;
+        clip.Begin((int)rows.size());
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                std::string name = rows[i]->str("name"), icon = rows[i]->str("icon");
+                if (icon.size() > 4 && icon.compare(icon.size() - 4, 4, "Anim") == 0) icon.replace(icon.size() - 4, 4, "0");
+                int maxLv = (int)rows[i]->num("max_level", 1);
+                std::string label = name + "  (levels 1-" + std::to_string(maxLv) + ")";
+                if (IconRow(icon, label, name.c_str())) {
+                    int lv = std::min(std::max(1, M.emoteLevel), std::max(1, maxLv));
+                    StartEvent("Emote " + name + " level " + std::to_string(lv), "emote", "AvatarPlayEmote",
+                               {{"name", Quote(name), ""}, {"level", std::to_string(lv), ""},
+                                {"speedMultiplier", Num(M.emoteSpeed), ""}, {"emoteLoopDuration", Num(M.emoteLoop), ""},
+                                {"mirror", M.emoteMirror ? "true" : "false", ""}},
+                               true);
+                }
+            }
+    }
+    ImGui::EndChild();
+}
+
+void CameraSection() {
+    Section("CAMERA SHAKE", nullptr);
+    Slider("shspeed", &M.shakeSpeed, 0.f, 10.f, 1.f, "speed %.2f");
+    Slider("shforce", &M.shakeForce, 0.f, 10.f, 1.f, "force %.2f");
+    Slider("shtime", &M.shakeTime, 0.f, 60.f, 2.f, "%.1f s");
+    if (ImGui::Button("Shake", ImVec2(200, 0)))
+        StartEvent("Camera shake", "shake", "SetCameraShake",
+                   {{"speed", Num(M.shakeSpeed), ""}, {"force", Num(M.shakeForce), ""}, {"duration", Num(M.shakeTime), ""},
+                    {"fadeInDuration", "0.2", ""}, {"fadeOutDuration", "0.5", ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Stop shaking")) StopEvent("Camera shake stopped", "shake");
+
+    Section("FILTERS & SHADES", nullptr);
+    static const char* kFilters[] = {"kFilterType_Standard", "kFilterType_Red", "kFilterType_Orange",
+                                     "kFilterType_Yellow", "kFilterType_Green", "kFilterType_Cyan", "kFilterType_Blue",
+                                     "kFilterType_Magenta", "kFilterType_Silver", "kFilterType_Infrared",
+                                     "kFilterType_Custom"};
+    auto applyFilter = [] {
+        if (!M.filter) {
+            StopEvent("Filter off", "filter");
+            return;
+        }
+        StartEvent(std::string("Filter ") + (kFilters[M.filterType] + 12), "filter", "CameraDesaturationEffect",
+                   {{"filterType", Quote(kFilters[M.filterType]), std::to_string(M.filterType)},
+                    {"intensityFloat", Num(M.filterAmount), ""}, {"invert", M.filterInvert ? "true" : "false", ""},
+                    {"changeTime", "0.3", ""}});
+    };
+    if (ImGui::Checkbox("Colour filter", &M.filter)) applyFilter();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+    if (ImGui::BeginCombo("##ft", kFilters[M.filterType] + 12)) {
+        for (int i = 0; i < 11; i++)
+            if (ImGui::Selectable(kFilters[i] + 12, i == M.filterType)) M.filterType = i, applyFilter();
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset##ft", ImVec2(130, 0))) M.filterType = 0, M.filter = false, applyFilter();
+    if (Slider("famount", &M.filterAmount, 0.f, 1.f, 1.f, "strength %.2f") && M.filter) applyFilter();
+    if (ImGui::Checkbox("Invert", &M.filterInvert) && M.filter) applyFilter();
+
+    struct Fx { const char* label; bool* on; const char* type; const char* help; };
+    Fx fx[] = {
+        {"Sunglasses (shades)", &M.sunglass, "CameraSunglassFade", "Darkens the view like sunglasses."},
+        {"Random tint", &M.tint, "CameraRandomTint", "Keeps tinting the view with changing colours."},
+        {"Surreal blue", &M.surreal, "CameraSurrealBlueEffect", "Blue dream-like look."},
+        {"Caustics", &M.caustics, "CameraCausticsEffect", "Underwater light ripples."},
+        {"Sketch (art book)", &M.sketch, "CameraArtBookEffects", "Outlined, drawn look."},
+        {"Hide cinematic bars", &M.noBars, "DisableCinematicBar", "No black bars in cutscenes."},
+    };
+    for (auto& f : fx) {
+        ImGui::PushID(f.type);
+        if (Toggle(f.label, f.on, f.help)) {
+            if (*f.on) StartEvent(std::string(f.label) + " on", f.type, f.type, {});
+            else StopEvent(std::string(f.label) + " off", f.type);
+        }
+        ImGui::PopID();
+    }
+
+    auto applyRain = [] {
+        if (!M.rain) {
+            StopEvent("Rain on screen off", "rain");
+            return;
+        }
+        StartEvent("Rain on screen", "rain", "CameraScreenRainDropEffect",
+                   {{"intensity", Num(M.rainAmount), ""}, {"dropSize", Num(M.rainSize), ""},
+                    {"density", Num(M.rainDensity), ""}});
+    };
+    if (Toggle("Rain on screen", &M.rain, "Drops running down the screen.")) applyRain();
+    if (Slider("rainamt", &M.rainAmount, 0.f, 1.f, 0.5f, "amount %.2f") && M.rain) applyRain();
+    if (Slider("rainsize", &M.rainSize, 0.2f, 4.f, 1.f, "drop size %.2f") && M.rain) applyRain();
+    if (Slider("raindens", &M.rainDensity, 0.5f, 3.f, 1.f, "density %.2f") && M.rain) applyRain();
+
+    Section("TIME & LENS", nullptr);
+    ImGui::TextUnformatted("Slow motion");
+    int r = Slider("slowmo", &M.slowmo, 0.05f, 1.f, 1.f, "speed %.2f");
+    if (r == 1) StartEvent("Slow motion " + Num(M.slowmo), "slowmo", "SetBulletTime",
+                           {{"speed", Num(M.slowmo), ""}, {"duration", "100000", ""}, {"fadeIn", "0.2", ""}});
+    if (r == 2) StopEvent("Normal speed", "slowmo");
+    if (ImGui::Button("Photo flash")) StartEvent("Flash", "flash", "CameraPhotoFlash", {});
+    if (!M.lensesRead && GameBase()) {
+        M.lensesRead = true;
+        M.lenses = EnumOptions("LevelCameraDefaults", "lensPreset");
+    }
+    if (!M.lenses.empty()) {
+        ImGui::TextUnformatted("Lens (field of view)");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+        if (ImGui::BeginCombo("##lens", M.lens < 0 ? "level default" : M.lenses[M.lens].c_str())) {
+            for (int i = 0; i < (int)M.lenses.size(); i++)
+                if (ImGui::Selectable(M.lenses[i].c_str(), i == M.lens)) {
+                    M.lens = i;
+                    StartEvent("Lens " + M.lenses[i], "lens", "LevelCameraDefaults",
+                               {{"lensPreset", Quote(M.lenses[i]), std::to_string(i)}});
+                }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##lens", ImVec2(130, 0))) M.lens = -1, StopEvent("Lens back to the level's", "lens");
+    }
+
+    Section("FREE CAMERA (experimental)", "The game's developer cameras; they may do nothing in a release build.");
+    if (Toggle("Drone mode (debug camera)", &M.debugCam, "DebugCamera.")) {
+        if (M.debugCam) StartEvent("Debug camera on", "debugcam", "DebugCamera", {});
+        else StopEvent("Debug camera off", "debugcam");
+    }
+    if (Toggle("Manual camera", &M.manualCam, "ManualControlCamera.")) {
+        if (M.manualCam) StartEvent("Manual camera on", "manualcam", "ManualControlCamera", {});
+        else StopEvent("Manual camera off", "manualcam");
+    }
+    Dim("First-person view and unlimited zoom need changes to the game's camera code that I haven't checked for "
+        "0.35.2 yet; they'll come in a later version.");
+}
+
+void WorldSection() {
+    Section("WORLD & COLLISION", nullptr);
+    if (Toggle("Disable terrain", &F.terrainOff,
+               "Turns the ground and its collision off, so you fall or pass through barriers. (TheVoid's "
+               "world.hide_terrain switch.)"))
+        if (!SetSwitch("Disable terrain", kTerrainSwitch, F.terrainOff)) F.terrainOff = !F.terrainOff;
+    if (Toggle("Disable reset barrier", &F.barrierOff,
+               "Experimental: sets the level's boundary plane to none (AvatarSetBoundaryPlane left empty), so "
+               "going past it shouldn't reset you. Switch off to give the level its plane back.")) {
+        if (F.barrierOff) StartEvent("Reset barrier off", "barrier", "AvatarSetBoundaryPlane", {});
+        else StopEvent("Reset barrier back", "barrier");
+    }
+    if (Toggle("Disable shadow", &F.shadowOff, "Removes your avatar's shadow.")) {
+        if (F.shadowOff) StartEvent("Shadow off", "shadow", "AvatarDisableShadow", {});
+        else StopEvent("Shadow back", "shadow");
+    }
+    ImGui::TextUnformatted("Surface friction");
+    Dim("How much grip the ground has: low = slippery like ice (the game's own slippery value is 0.2). "
+        "Reset = the game's normal ground.");
+    int r = Slider("friction", &F.friction, 0.f, 2.f, 1.f, "%.2f");
+    if (r == 1) F.frictionOn = true, ApplyFriction(true, F.friction);
+    if (r == 2) F.frictionOn = false, ApplyFriction(false, 0);
+}
+
+void ShoutSection() {
+    Section("SHOUT", "Your call: colour, strength, voice; Shout once or keep repeating.");
+    if (!F.voicesRead && GameBase()) {
+        F.voicesRead = true;
+        F.voices = EnumOptions("OnShout", "voiceType");
+        if (F.voices.empty()) F.voices = EnumOptions("AvatarOutfitRegion", "voice");
+    }
+    ImGui::ColorEdit3("Colour", F.shoutColor);
+    ImGui::SameLine();
+    if (ImGui::Button("Reset##col")) F.shoutColor[0] = F.shoutColor[1] = F.shoutColor[2] = 1.f;
+    ImGui::TextUnformatted("Intensity");
+    Slider("intensity", &F.shoutIntensity, 0.f, 5.f, 1.f, "%.2f");
+    if (!F.voices.empty()) {
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+        std::string cur = F.voices[F.voice];
+        if (ImGui::BeginCombo("##voice", cur.c_str())) {
+            for (int i = 0; i < (int)F.voices.size(); i++)
+                if (ImGui::Selectable(F.voices[i].c_str(), i == F.voice)) F.voice = i, F.voiceOn = i > 0, ApplyVoice();
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##voice", ImVec2(130, 0))) F.voice = 0, F.voiceOn = false, ApplyVoice();
+        Dim("Voice type (temporary; Reset gives you your own voice back).");
+    } else {
+        Dim("Voice types: not readable from the game yet.");
+    }
+    Dim("Pitch: the game has no pitch setting for shouts in 0.35.2, so it can't be changed here.");
+    if (ImGui::Button("Shout", ImVec2(200, 0))) Shout();
+    ImGui::SameLine();
+    ImGui::Checkbox("Repeat", &F.shoutRepeat);
+    ImGui::TextUnformatted("Repeat speed (shouts per second)");
+    Slider("rate", &F.shoutPerSecond, 0.2f, 10.f, 1.f, "%.1f / s");
+}
+
+int gSub = 0;
+
 }  // namespace
+
+// Repeating actions; called every frame from Draw, whichever tab is open.
+void FeaturesTick() {
+    if (!GameObject()) return;
+    double t = ImGui::GetTime();
+    if (F.scatter && t >= F.scatterNext) {
+        F.scatterNext = t + 0.5;
+        StartEvent("", "scatter", "AvatarBreakHandHold",
+                   {{"breakFromLeader", "true", ""}, {"breakFromFollowers", "true", ""}, {"breakCarryChain", "true", ""}});
+    }
+    if (F.shoutRepeat && t >= F.shoutNext) {
+        F.shoutNext = t + 1.0 / std::max(0.2f, F.shoutPerSecond);
+        Shout(true);
+    }
+    if (M.pogoKeep && t >= M.pogoNext) {
+        M.pogoNext = t + std::max(0.2f, M.pogoEvery);
+        Bounce(true);
+    }
+    if (M.tpose && M.tposeHoldAt > 0 && t >= M.tposeHoldAt) {
+        M.tposeHoldAt = 0;
+        StartEvent("", "tposehold", "AvatarPauseAnim", {{"duration", "100000", ""}});
+    }
+    if (M.neck && t >= M.neckNext) {
+        M.neckNext = t + 0.25;
+        Neck(true);
+    }
+}
 
 void FeaturesTab() {
     bool inWorld = GameObject() != 0;
     if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world to use these.");
-    Dim("Everything here is local to your game. Sliders apply when you let go; Reset puts the game's normal "
-        "behaviour back. Results show in the Log tab.");
-
+    Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
+    static const char* kSubs[] = {"Player", "Transform", "Outfits", "Emotes", "Camera", "World", "Shout"};
+    if (ImGui::BeginTabBar("##sub")) {
+        for (int i = 0; i < 7; i++)
+            if (ImGui::BeginTabItem(kSubs[i])) {
+                gSub = i;
+                ImGui::EndTabItem();
+            }
+        ImGui::EndTabBar();
+    }
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
-        // ---- transform
-        Section("TRANSFORM AVATAR", "Becomes a form for the time below (the game's spell effects, local only).");
-        Slider("Duration", &F.spellSeconds, 5.f, 600.f, 60.f, "%.0f s");
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-        ImGui::InputTextWithHint("##spf", "search", F.spellFilter, sizeof F.spellFilter);
-        ImGui::SameLine();
-        ImGui::Checkbox("Other spells too", &F.showAllSpells);
-        if (ImGui::BeginChild("##spells", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 6.5f),
-                              ImGuiChildFlags_Border)) {
-            for (const auto& s : kSpells) {
-                if (!s.form && !F.showAllSpells) continue;
-                if (F.spellFilter[0] && !strstr(s.id, F.spellFilter)) continue;
-                ImGui::PushID(s.id);
-                SpellButton(s);
-                ImGui::PopID();
-            }
+        switch (gSub) {
+            case 0: PlayerSection(inWorld); break;
+            case 1: TransformSection(); break;
+            case 2: OutfitsSection(); break;
+            case 3: EmotesSection(); break;
+            case 4: CameraSection(); break;
+            case 5: WorldSection(); break;
+            case 6: ShoutSection(); break;
         }
-        ImGui::EndChild();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-        ImGui::InputTextWithHint("##custom", "another spell id", F.customSpell, sizeof F.customSpell);
-        ImGui::SameLine();
-        if (ImGui::Button("Use") && F.customSpell[0])
-            StartEvent(std::string("Transform: ") + F.customSpell, "spell", "GrantSpell",
-                       {{"buffName", Quote(F.customSpell), ""}, {"duration", Num(F.spellSeconds), ""},
-                        {"networked", "false", ""}});
-        if (ImGui::Button("Back to normal (remove spells)"))
-            StopEvent("Transform stopped", "spell"),
-                StartEvent("All spell effects removed", "unspell", "RemoveSpell", {{"buffName", "\"\"", ""}});
-
-        // ---- movement
-        Section("MOVEMENT", nullptr);
-        ImGui::TextUnformatted("Player hover");
-        Dim("Lifts you off the ground and holds you up. The value is how fast you rise; set it low to hover "
-            "gently, Reset to land.");
-        if (Slider("hover", &F.hover, 0.f, 10.f, 0.f, "%.2f")) Hover();
-
-        if (Toggle("Antigravity", &F.antigravity, "No gravity for your avatar."))
-            StartEvent(F.antigravity ? "Antigravity on" : "Antigravity off", "gravity", "SetAvatarGravityMult",
-                       {{"gravityMult", F.antigravity ? "0" : "1", ""}});
-
-        ImGui::TextUnformatted("Speed up / down");
-        Dim("Walking and running speed (1 = normal).");
-        if (Slider("speed", &F.speed, 0.1f, 6.f, 1.f, "%.2fx"))
-            StartEvent("Speed " + Num(F.speed), "speed", "SetAvatarRunSpeedMult", {{"runSpeed", Num(F.speed), ""}});
-
-        if (Toggle("Scatter", &F.scatter, "Keeps letting go of hand-holds and carries (yours and others' on you).") &&
-            !F.scatter)
-            StopEvent("Scatter off", "scatter");
-        if (F.scatter && inWorld && ImGui::GetTime() >= F.scatterNext) {
-            F.scatterNext = ImGui::GetTime() + 0.5;
-            StartEvent("", "scatter", "AvatarBreakHandHold",
-                       {{"breakFromLeader", "true", ""}, {"breakFromFollowers", "true", ""},
-                        {"breakCarryChain", "true", ""}});
-        }
-
-        if (Toggle("Crawl mode", &F.crawl, "Your avatar crawls.")) {
-            if (F.crawl) StartEvent("Crawl on", "crawl", "AvatarCrawl", {{"crawlAmount", "1.0", ""}});
-            else StopEvent("Crawl off", "crawl");
-        }
-        if (Toggle("Force flight", &F.flight, "Keeps you in flight mode while on.")) {
-            if (F.flight) StartEvent("Force flight on", "flight", "AvatarForceEnableFlightMode", {{"fireOnce", "false", ""}});
-            else StopEvent("Force flight off", "flight");
-        }
-        if (Toggle("Walk under water", &F.walkUnderWater, "Walk along the bottom instead of swimming.")) {
-            if (F.walkUnderWater) StartEvent("Walk under water on", "water", "WalkUnderWater", {});
-            else StopEvent("Walk under water off", "water");
-        }
-        if (Toggle("Kill avatar", &F.kill, "Your avatar dies (the game's own death), and keeps dying while on.")) {
-            if (F.kill) StartEvent("Kill avatar on", "kill", "KillLocalAvatar", {});
-            else StopEvent("Kill avatar off", "kill");
-        }
-
-        // ---- winged light
-        Section("WINGED LIGHT", nullptr);
-        ImGui::TextUnformatted("Temporary (this game session only)");
-        Dim("Shows your cape at this wing level. Switch off or Reset to get your real level back.");
-        bool changed = ImGui::Checkbox("Use this level", &F.capeOn);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(160);
-        if (ImGui::InputInt("##lvl", &F.capeLevel)) changed = F.capeOn;
-        if (F.capeLevel < 0) F.capeLevel = 0;
-        int r = SliderInt("cape", &F.capeLevel, 0, 20, 7);
-        if (r == 2) F.capeOn = false, changed = true;
-        else if (r == 1 && F.capeOn) changed = true;
-        if (changed) {
-            if (F.capeOn)
-                StartEvent("Winged light level " + std::to_string(F.capeLevel), "cape", "AvatarOverrideCapeLevel",
-                           {{"level", std::to_string(F.capeLevel), ""}, {"autoRevertOnStop", "true", ""},
-                            {"restoreEnergyOnStop", "true", ""}});
-            else
-                StopEvent("Winged light back to your own", "cape");
-        }
-        ImGui::TextUnformatted("Permanent");
-        ImGui::TextColored(kRed300, "Not available.");
-        Dim("Your real winged light count is kept by the game's servers; changing it would mean changing your "
-            "account, which Offset Lab doesn't do.");
-
-        // ---- world
-        Section("WORLD & COLLISION", nullptr);
-        if (Toggle("Disable terrain", &F.terrainOff,
-                   "Turns the ground and its collision off, so you fall or pass through barriers. (TheVoid's "
-                   "world.hide_terrain switch.)"))
-            if (!SetSwitch("Disable terrain", kTerrainSwitch, F.terrainOff)) F.terrainOff = !F.terrainOff;
-        if (Toggle("Disable reset barrier", &F.barrierOff,
-                   "Experimental: sets the level's boundary plane to none (AvatarSetBoundaryPlane left empty), so "
-                   "going past it shouldn't reset you. Switch off to give the level its plane back.")) {
-            if (F.barrierOff) StartEvent("Reset barrier off", "barrier", "AvatarSetBoundaryPlane", {});
-            else StopEvent("Reset barrier back", "barrier");
-        }
-        if (Toggle("Disable shadow", &F.shadowOff, "Removes your avatar's shadow.")) {
-            if (F.shadowOff) StartEvent("Shadow off", "shadow", "AvatarDisableShadow", {});
-            else StopEvent("Shadow back", "shadow");
-        }
-        ImGui::TextUnformatted("Surface friction");
-        Dim("How much grip the ground has: low = slippery like ice (the game's own slippery value is 0.2). "
-            "Reset = the game's normal ground.");
-        r = Slider("friction", &F.friction, 0.f, 2.f, 1.f, "%.2f");
-        if (r == 1) F.frictionOn = true, ApplyFriction(true, F.friction);
-        if (r == 2) F.frictionOn = false, ApplyFriction(false, 0);
-
-        // ---- shout
-        Section("SHOUT", "Your call: colour, strength, voice; Shout once or keep repeating.");
-        if (!F.voicesRead && GameBase()) {
-            F.voicesRead = true;
-            F.voices = EnumOptions("OnShout", "voiceType");
-            if (F.voices.empty()) F.voices = EnumOptions("AvatarOutfitRegion", "voice");
-        }
-        ImGui::ColorEdit3("Colour", F.shoutColor);
-        ImGui::SameLine();
-        if (ImGui::Button("Reset##col")) F.shoutColor[0] = F.shoutColor[1] = F.shoutColor[2] = 1.f;
-        ImGui::TextUnformatted("Intensity");
-        Slider("intensity", &F.shoutIntensity, 0.f, 5.f, 1.f, "%.2f");
-        if (!F.voices.empty()) {
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
-            std::string cur = F.voices[F.voice];
-            if (ImGui::BeginCombo("##voice", cur.c_str())) {
-                for (int i = 0; i < (int)F.voices.size(); i++)
-                    if (ImGui::Selectable(F.voices[i].c_str(), i == F.voice)) F.voice = i, F.voiceOn = i > 0, ApplyVoice();
-                ImGui::EndCombo();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Reset##voice", ImVec2(130, 0))) F.voice = 0, F.voiceOn = false, ApplyVoice();
-            Dim("Voice type (temporary; Reset gives you your own voice back).");
-        } else {
-            Dim("Voice types: not readable from the game yet.");
-        }
-        Dim("Pitch: the game has no pitch setting for shouts in 0.35.2, so it can't be changed here.");
-        if (ImGui::Button("Shout", ImVec2(200, 0))) Shout();
-        ImGui::SameLine();
-        ImGui::Checkbox("Repeat", &F.shoutRepeat);
-        ImGui::TextUnformatted("Repeat speed (shouts per second)");
-        Slider("rate", &F.shoutPerSecond, 0.2f, 10.f, 1.f, "%.1f / s");
-        if (F.shoutRepeat && inWorld && ImGui::GetTime() >= F.shoutNext) {
-            F.shoutNext = ImGui::GetTime() + 1.0 / std::max(0.2f, F.shoutPerSecond);
-            Shout(true);
-        }
-        ImGui::Spacing();
-        Dim("More options will come here.");
     }
     ImGui::EndChild();
 }

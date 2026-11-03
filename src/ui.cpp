@@ -1068,6 +1068,7 @@ void Draw(bool* open) {
         ImGui::PopStyleColor();
     }
     ImGui::Separator();
+    FeaturesTick();
 
     static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets"};
     static const int kOrder[] = {5, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above

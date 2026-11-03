@@ -29,26 +29,38 @@ Each one starts one of the game's own events from Lua (kept as `OffsetLab[key]` 
 stopped) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
 **Reset**, which puts the game's normal behaviour back. All local to your game.
 
+The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
+
 | Feature | Control | Uses (0.35.2) |
 |---|---|---|
-| Transform avatar | scrolling buttons (forms; *Other spells too* for the rest), duration slider, any spell id, *Back to normal* | `GrantSpell` (not networked), `RemoveSpell` |
 | Player hover | slider (rise speed) | `AvatarAntiGravity` (upward speed, gravity 0, take off) |
 | Antigravity | toggle | `SetAvatarGravityMult` 0 / 1 |
 | Speed up / down | slider (0.1–6×) | `SetAvatarRunSpeedMult` |
-| Scatter | toggle | `AvatarBreakHandHold` every 0.5 s |
-| Crawl mode | toggle | `AvatarCrawl` |
-| Force flight | toggle | `AvatarForceEnableFlightMode` |
-| Walk under water | toggle | `WalkUnderWater` |
-| Kill avatar | toggle | `KillLocalAvatar` |
-| Winged light (temporary) | toggle + slider + typing | `AvatarOverrideCapeLevel` (reverts when stopped) |
+| Auto walk | toggle, speed and direction sliders | `SetAvatarVelocity` (x/z held while on) |
+| Pogo stick | power slider, Bounce, keep bouncing + interval | `SetAvatarMinYSpeed` (take off) |
+| Scatter, Crawl, Force flight, Walk under water, Kill avatar | toggles | `AvatarBreakHandHold` (every 0.5 s), `AvatarCrawl`, `AvatarForceEnableFlightMode`, `WalkUnderWater`, `KillLocalAvatar` |
+| Stop all animations | toggle | `AvatarPauseAnim` |
+| T-pose | toggle; any animation name with Play / Stop | `PlayAvatarAnimSeq` (`AirplaneArmsEmote_1`), then `AvatarPauseAnim`; `StopAvatarAnimSeq` |
+| Neck turn (experimental) | toggle, sideways and up/down sliders | `AvatarLookAt` at a marker placed from `GetCameraTransform` |
+| Follow | *Look for access* (writes the game's Lua API to `offsetlab_lua_api.txt`) | not available yet: no event follows another player, and their positions aren't read yet |
+| Transform avatar | scrolling buttons (forms; *Other spells too*), duration slider, any spell id, *Back to normal* | `GrantSpell` (not networked), `RemoveSpell` |
+| Winged light, temporary | toggle + slider + typing | `AvatarOverrideCapeLevel` (reverts when stopped) |
+| Winged light, permanent (experimental) | Collect / Deposit / Convert / Drop, behind a server switch that's off at every start | the game's own `…WingBuff…ServerRequestEvent`s; the server decides |
+| Change outfits | categories with the game's icons, scrolling list with icons and names, search, *NPC outfits too*, *Back to my outfit* | the game's `Data/Resources/OutfitDefs.json` (read through Canvas), `AvatarSetOutfit` |
+| Edit outfits | height and size sliders | TheVoid's avatar height/scale values (`0x313970C`, `0x3139710`; `0x31396FC`/`0x3139700` in 0.35.1) |
+| Emotes | level, speed, loop and mirror; scrolling list with icons; Stop | `Data/Resources/CollectibleDefs.json`, `AvatarPlayEmote` |
+| Camera | shake (speed, force, time); colour filters with strength and invert; sunglasses, random tint, surreal blue, caustics, sketch, hide cinematic bars; rain on screen (amount, size, density); slow motion; photo flash; lens presets; debug and manual cameras (experimental) | `SetCameraShake`, `CameraDesaturationEffect`, `CameraSunglassFade`, `CameraRandomTint`, `CameraSurrealBlueEffect`, `CameraCausticsEffect`, `CameraArtBookEffects`, `DisableCinematicBar`, `CameraScreenRainDropEffect`, `SetBulletTime`, `CameraPhotoFlash`, `LevelCameraDefaults`, `DebugCamera`, `ManualControlCamera` |
 | Disable terrain | toggle | the game's terrain switch, byte at `0x3169CEC` (TheVoid's `world.hide_terrain`, `0x3169CDC` in 0.35.1) |
 | Disable reset barrier | toggle (experimental) | `AvatarSetBoundaryPlane` with no plane |
 | Disable shadow | toggle | `AvatarDisableShadow` |
 | Surface friction | slider | the game's "slippery ground" switch (byte at `0x34AFCEC`) and the value it loads (instructions at `0x249E524`, normally 0.2), patched to the slider's value; Reset restores both |
 | Shout | colour, intensity, voice type, Shout button, repeat + rate | `AvatarDoShout`, `AvatarSetVoice` (temporary) |
 
-Not here: a **permanent** winged light change (that's your account on the game's servers, which this mod doesn't
-change) and a **shout pitch** (0.35.2 has no event or setting for it).
+Not yet: shout pitch (0.35.2 has no setting for it), moving single outfit pieces, first-person view and unlimited zoom
+(camera code changes not checked for 0.35.2 yet), Follow.
+
+Icons and the outfit/emote lists come from Canvas's own API (`IconLoader::getUIIcon`, `Cipher::read_asset`,
+declared in `src/canvas_api.h`); nothing from the game is stored in this repository.
 
 **Server types** (account, purchases, inventory, friends, requests): fireable only after turning on
 *Server types*, which is off at every start, because they send requests to whatever server the game is connected to.

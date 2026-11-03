@@ -87,6 +87,7 @@ std::vector<std::string> LogLines();
 // ---- UI ----
 void Draw(bool* open);
 void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders, buttons)
+void FeaturesTick();     // features.cpp: repeating actions, every frame
 void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
 void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
 

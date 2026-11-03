@@ -14,8 +14,9 @@ set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/third_party/imgui)
 # Link-only stand-in for Canvas's libciphered.so, which provides Dear ImGui at runtime. Built from the same Dear
 # ImGui commit Canvas uses (d3c3514a, MIT); the mod records a dependency on libciphered.so but ships none of it.
 add_library(ciphered SHARED
-  ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_widgets.cpp ${IMGUI_DIR}/imgui_tables.cpp)
-target_include_directories(ciphered PUBLIC ${IMGUI_DIR})
+  ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_widgets.cpp ${IMGUI_DIR}/imgui_tables.cpp
+  src/linkonly/canvas_stubs.cpp)  # Canvas's icon and asset functions (declared in src/canvas_api.h)
+target_include_directories(ciphered PUBLIC ${IMGUI_DIR} src)
 set_target_properties(ciphered PROPERTIES OUTPUT_NAME ciphered LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/linkonly)
 # Export only Dear ImGui from the stand-in (like Canvas's library), so the mod carries its own C++ runtime
 target_link_options(ciphered PRIVATE -Wl,--exclude-libs,ALL)
