@@ -28,7 +28,9 @@ const LabType* Types(size_t* count) {
     *count = LAB_TYPE_COUNT;
     return kTypes;
 }
-uint32_t FieldNameAddr(size_t i) { return kFieldNames[i]; }
+const LabSetting& Setting(size_t i) { return kSettings[i]; }
+const LabEnum& Enum(size_t i) { return kEnums[i]; }
+uint32_t EnumOptionAddr(size_t i) { return kEnumOptions[i]; }
 uint32_t NoteAddr(size_t i) { return kNotes[i]; }
 uint32_t RegisterFunction() { return LAB_REGISTER_FN; }
 
