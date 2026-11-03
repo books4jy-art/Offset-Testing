@@ -35,6 +35,7 @@ inline ImVec4 Sky(float a) { return ImVec4(kSky400.x, kSky400.y, kSky400.z, a); 
 // into 75% x 80% of the screen, at most 1). Rows at least 36 dp high, 44 dp sub-tab buttons, 20 px scrollbar.
 float gDp = 1.6667f;   // px per dp right now
 float gTextPx = 24.f;  // text height in px right now
+float gScrollbarPx = 40.f;
 float DP(float v) { return v * gDp; }
 
 void ApplyTheme() {
@@ -55,7 +56,7 @@ void ApplyTheme() {
     s.FramePadding = ImVec2(DP(12), std::max(DP(6), (DP(36) - gTextPx) * 0.5f));  // 36 dp rows
     s.WindowPadding = ImVec2(DP(12), DP(12));
     s.TouchExtraPadding = ImVec2(DP(2), DP(2));
-    s.ScrollbarSize = std::max(20.f, std::min(40.f, 20.f * gDp / 1.6667f));  // TSM: 20 px (20-40)
+    s.ScrollbarSize = gScrollbarPx;  // Scrollbar slider (default 40 px: TSM's widest)
     s.GrabMinSize = DP(20);
     ImVec4* c = s.Colors;
     const ImVec4 bg(0.043f, 0.051f, 0.071f, 1.00f);  // #0b0d12, solid so the game doesn't show through
@@ -237,6 +238,10 @@ struct State {
     float uiScale = 1.0f;     // the panel's size on top of the screen's (Size slider)
     float panelWidthDp = 500.f; // TSM's default panel width
     bool menuOpen = true;
+    float scrollbarPx = 40.f;  // scrollbar width
+    float handleY = 0.08f;     // the Lab handle: where along the edge (0 top - 1 bottom)
+    bool dockRight = true;     // which side the handle and the panel are on
+    bool handleDragging = false;
     std::string lastFired;       // from the previous session: last function fired before the game closed
     bool lastFiredShown = false;
     std::vector<std::string> crashed;  // functions marked as crashing the game
@@ -251,7 +256,9 @@ bool IsCrashed(const std::string& name) {
 
 void SavePrefs() {
     std::string t = "uiScale=" + std::to_string(S.uiScale) + "\npanelWidthDp=" + std::to_string(S.panelWidthDp) +
-                    "\nmenuOpen=" + std::string(S.menuOpen ? "1" : "0") + "\n";
+                    "\nmenuOpen=" + std::string(S.menuOpen ? "1" : "0") + "\nscrollbarPx=" +
+                    std::to_string(S.scrollbarPx) + "\nhandleY=" + std::to_string(S.handleY) +
+                    "\ndockRight=" + std::string(S.dockRight ? "1" : "0") + "\n";
     for (auto& c : S.crashed) t += "crashed=" + c + "\n";
     WriteTextFile(DataPath("offsetlab_settings.txt"), t);
 }
@@ -268,6 +275,9 @@ void LoadPrefs() {
         if (line.rfind("uiScale=", 0) == 0) S.uiScale = std::max(0.7f, std::min(1.5f, strtof(line.c_str() + 8, nullptr)));
         if (line.rfind("panelWidthDp=", 0) == 0) S.panelWidthDp = std::max(360.f, std::min(720.f, strtof(line.c_str() + 13, nullptr)));
         if (line.rfind("menuOpen=", 0) == 0) S.menuOpen = line[9] == '1';
+        if (line.rfind("scrollbarPx=", 0) == 0) S.scrollbarPx = std::max(20.f, std::min(80.f, strtof(line.c_str() + 12, nullptr)));
+        if (line.rfind("handleY=", 0) == 0) S.handleY = std::max(0.f, std::min(1.f, strtof(line.c_str() + 8, nullptr)));
+        if (line.rfind("dockRight=", 0) == 0) S.dockRight = line[10] == '1';
         if (line.rfind("crashed=", 0) == 0) S.crashed.push_back(line.substr(8));
         a = b + 1;
     }
@@ -1095,21 +1105,55 @@ void Draw(bool* open) {
     gTextPx = DP(15);  // body text 15 dp high
     // window font scale so text is gTextPx high, whatever font size Canvas loaded
     float fontScale = gTextPx / std::max(1.f, ImGui::GetFont()->FontSize * io.FontGlobalScale);
+    gScrollbarPx = S.scrollbarPx;
     ApplyTheme();
     const float margin = DP(12);
+    const float W = io.DisplaySize.x, H = io.DisplaySize.y;
+    const float panelW = std::min(DP(S.panelWidthDp), W - 2 * margin - DP(60));
+    const float panelX = S.dockRight ? W - margin - panelW : margin;
 
-    // the collapse button, top-right corner
-    const float handle = DP(44);
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin - DP(120), margin), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(DP(120), handle), ImGuiCond_Always);
+    // the Lab handle (like TSM's slide handle): tap to open/collapse; drag it up/down along the edge, or across to
+    // the other side to dock the panel there. When open it sits on the panel's inner edge.
+    const float hw = DP(48), hh = DP(110);
+    float hy = margin + S.handleY * (H - 2 * margin - hh);
+    float hx = S.menuOpen ? (S.dockRight ? panelX - hw - DP(4) : panelX + panelW + DP(4))
+                          : (S.dockRight ? W - hw - DP(4) : DP(4));
+    ImGui::SetNextWindowPos(ImVec2(hx, hy), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(hw, hh), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::Begin("##offsetlab_menu", nullptr,
+    ImGui::Begin("##offsetlab_handle", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBackground);
     ImGui::SetWindowFontScale(fontScale);
-    if (AccentButton(S.menuOpen ? "Lab  >" : "<  Lab", ImVec2(DP(120), handle))) {
-        S.menuOpen = !S.menuOpen;
+    ImGui::InvisibleButton("##handle", ImVec2(hw, hh));
+    bool held = ImGui::IsItemActive(), hovered = ImGui::IsItemHovered();
+    if (held) {
+        ImVec2 d = ImGui::GetMouseDragDelta(0, 0.f);
+        if (!S.handleDragging && (std::fabs(d.x) > DP(10) || std::fabs(d.y) > DP(10))) S.handleDragging = true;
+        if (S.handleDragging) {
+            ImVec2 m = io.MousePos;
+            S.handleY = std::max(0.f, std::min(1.f, (m.y - margin - hh * 0.5f) / std::max(1.f, H - 2 * margin - hh)));
+            if (m.x < W * 0.25f) S.dockRight = false;
+            else if (m.x > W * 0.75f) S.dockRight = true;
+        }
+    }
+    if (ImGui::IsItemDeactivated()) {
+        if (!S.handleDragging) S.menuOpen = !S.menuOpen;
+        S.handleDragging = false;
         SavePrefs();
+    }
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 p = ImGui::GetItemRectMin(), q = ImGui::GetItemRectMax();
+        ImU32 bg = ImGui::GetColorU32(held ? kSky300 : hovered ? Sky(0.95f) : Sky(0.85f));
+        dl->AddRectFilled(p, q, bg, DP(10));
+        const char* label = "Lab";
+        ImVec2 ts = ImGui::CalcTextSize(label);
+        ImU32 fg = ImGui::GetColorU32(ImVec4(0.059f, 0.090f, 0.165f, 1.f));
+        dl->AddText(ImVec2((p.x + q.x - ts.x) * 0.5f, (p.y + q.y) * 0.5f - ts.y - DP(2)), fg, label);
+        const char* arrow = (S.menuOpen == S.dockRight) ? ">" : "<";
+        ImVec2 as = ImGui::CalcTextSize(arrow);
+        dl->AddText(ImVec2((p.x + q.x - as.x) * 0.5f, (p.y + q.y) * 0.5f + DP(2)), fg, arrow);
     }
     ImGui::End();
     ImGui::PopStyleVar();
@@ -1118,11 +1162,9 @@ void Draw(bool* open) {
         return;
     }
 
-    // the panel: docked on the right under the button, TSM's width (500 dp; Width slider 360-720 dp)
-    float top = margin + handle + DP(6);
-    float w = std::min(DP(S.panelWidthDp), io.DisplaySize.x - 2 * margin);
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin - w, top), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(w, io.DisplaySize.y - top - margin), ImGuiCond_Always);
+    // the panel: full height on the handle's side, TSM's width (500 dp; Width 360-720 dp)
+    ImGui::SetNextWindowPos(ImVec2(panelX, margin), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(panelW, H - 2 * margin), ImGuiCond_Always);
     ImGui::Begin("##offsetlab_panel", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
@@ -1135,13 +1177,23 @@ void Draw(bool* open) {
     ImGui::TextColored(base ? kSky300 : kRed300, "%s", base ? "Game library loaded" : "Game library not found");
     ImGui::SameLine();
     Dim("%s", game ? "· in the world, ready to fire" : "· enter the world to fire game functions");
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.3f);
-    ImGui::SliderFloat("Size", &S.uiScale, 0.7f, 1.5f, "%.2f");
-    if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
-    ImGui::SliderFloat("Width", &S.panelWidthDp, 360.f, 720.f, "%.0f dp");
-    if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
+    if (ImGui::CollapsingHeader("Display")) {
+        Dim("Drag the Lab handle up or down to move it, or across the screen to dock the panel on the other side.");
+        float lw = ImGui::GetContentRegionAvail().x * 0.62f;
+        ImGui::SetNextItemWidth(lw);
+        ImGui::SliderFloat("Size", &S.uiScale, 0.7f, 1.5f, "%.2f");
+        if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
+        ImGui::SetNextItemWidth(lw);
+        ImGui::SliderFloat("Width", &S.panelWidthDp, 360.f, 720.f, "%.0f dp");
+        if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
+        ImGui::SetNextItemWidth(lw);
+        ImGui::SliderFloat("Scrollbar", &S.scrollbarPx, 20.f, 80.f, "%.0f px");
+        if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
+        if (ImGui::Button("Defaults")) {
+            S.uiScale = 1.f, S.panelWidthDp = 500.f, S.scrollbarPx = 40.f, S.handleY = 0.08f, S.dockRight = true;
+            SavePrefs();
+        }
+    }
     if (!S.lastFired.empty() && !S.lastFiredShown) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.05f, 0.6f));
         if (ImGui::BeginChild("##lastfired", ImVec2(0, 0), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY)) {

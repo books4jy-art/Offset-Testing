@@ -13,10 +13,12 @@ Download `libOffsetLab.so` from the [latest release](../../releases/latest) and 
 
 ## Window
 
-Offset Lab draws its own window (`selfManagedUI`), laid out like TSM's: a panel docked on the right (500 dp wide,
-360–720 with **Width**), opened and collapsed with the **Lab** button in the top-right corner. Sizes are TSM's, in dp
+Offset Lab draws its own window (`selfManagedUI`), laid out like TSM's: a full-height panel docked on one side (500 dp
+wide, 360–720 with **Width**), opened and collapsed with the **Lab** handle. Like TSM's slide handle, it sits on the
+panel's inner edge (on the screen edge when collapsed); drag it up or down to move it, or across the screen to dock
+the panel on the other side. **Display** (top of the panel) has Size, Width and Scrollbar (default 40 px, 20–80). Sizes are TSM's, in dp
 (1.6667 px × TSM's auto-scale, which fits its 430×545 dp layout into 75% × 80% of the screen, at most 1): 12 dp
-margins, rows at least 36 dp high, 44 dp sub-tab buttons, text 15 dp high, a 20 px scrollbar. **Size** scales it all.
+margins, rows at least 36 dp high, 44 dp sub-tab buttons, text 15 dp high. **Size** scales it all.
 Lists scroll by dragging the content (a vertical drag that starts on a button scrolls instead of pressing it).
 Features that repeat keep running while the panel is collapsed.
 
