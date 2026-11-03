@@ -23,7 +23,7 @@ struct LabType {
 
 // One setting of a type, from the game's own setting record.
 enum SettingKind : uint8_t {
-    kUnknown = 0, kBool, kFloat, kInt, kText, kVec3, kColor3, kVec4, kEnum, kObject,
+    kUnknown = 0, kBool, kFloat, kInt, kText, kVec3, kColor3, kVec4, kEnum, kObject, kVec2,
 };
 struct LabSetting {
     uint32_t nameAddr;     // setting name
@@ -33,6 +33,8 @@ struct LabSetting {
     uint16_t eventOffset;  // where the value lives inside the event
     uint8_t  kind;         // SettingKind
     uint16_t enumIndex;    // option list for kEnum
+    float minValue, maxValue;  // the game's valid range (Tool_MinMaxValues)
+    uint8_t hasRange;          // 1 when the game gives that range
 };
 struct LabEnum { uint32_t first; uint32_t count; };
 

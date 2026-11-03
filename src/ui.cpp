@@ -350,7 +350,7 @@ Value DefaultValue(const LabSetting& st) {
         case kBool: v.b = d == "true"; break;
         case kFloat: v.f[0] = nums.empty() ? 0.f : nums[0]; break;
         case kInt: v.i = nums.empty() ? 0 : (int)nums[0]; break;
-        case kVec3: case kColor3: case kVec4:
+        case kVec3: case kColor3: case kVec4: case kVec2:
             for (size_t k = 0; k < nums.size() && k < 4; k++) v.f[k] = nums[k];
             if (st.kind == kColor3 && nums.empty()) v.f[0] = v.f[1] = v.f[2] = 1.f;
             break;
@@ -389,6 +389,7 @@ std::string LuaValue(const LabSetting& st, const Value& v) {
         case kText: return Quote(v.text);
         case kVec3: case kColor3: return "{" + Num(v.f[0]) + ", " + Num(v.f[1]) + ", " + Num(v.f[2]) + "}";
         case kVec4: return "{" + Num(v.f[0]) + ", " + Num(v.f[1]) + ", " + Num(v.f[2]) + ", " + Num(v.f[3]) + "}";
+        case kVec2: return "{" + Num(v.f[0]) + ", " + Num(v.f[1]) + "}";
         case kEnum: {
             auto& opts = Options(st);
             return v.option < (int)opts.size() ? Quote(opts[v.option]) : "nil";
@@ -434,12 +435,14 @@ bool SettingControl(const LabSetting& st, const std::string& name, Value& v, flo
         case kFloat: {
             float lo, hi;
             auto d = Numbers(Unquote(GameString(st.defaultAddr)));
-            FloatRange(name, d.empty() ? 0.f : d[0], lo, hi);
+            if (st.hasRange == 1) lo = st.minValue, hi = st.maxValue;
+            else FloatRange(name, d.empty() ? 0.f : d[0], lo, hi);
             ImGui::SetNextItemWidth(width * 0.62f);
-            ch |= ImGui::SliderFloat("##s", &v.f[0], lo, hi, "%.3f");
+            ch |= ImGui::SliderFloat("##s", &v.f[0], lo, hi, "%.3f", st.hasRange == 1 ? ImGuiSliderFlags_AlwaysClamp : 0);
             ImGui::SameLine();
             ImGui::SetNextItemWidth(width * 0.36f);
             ch |= ImGui::InputFloat("##t", &v.f[0], 0, 0, "%.3f");
+            if (st.hasRange == 1) v.f[0] = std::max(st.minValue, std::min(st.maxValue, v.f[0]));
             break;
         }
         case kInt:
@@ -447,11 +450,14 @@ bool SettingControl(const LabSetting& st, const std::string& name, Value& v, flo
             {
                 auto d = Numbers(Unquote(GameString(st.defaultAddr)));
                 int def = d.empty() ? 0 : (int)d[0];
-                ch |= ImGui::SliderInt("##s", &v.i, std::min(0, def * 4), std::max(100, def * 4));
+                int lo = st.hasRange == 1 ? (int)st.minValue : std::min(0, def * 4);
+                int hi = st.hasRange == 1 ? (int)st.maxValue : std::max(100, def * 4);
+                ch |= ImGui::SliderInt("##s", &v.i, lo, hi, "%d", st.hasRange == 1 ? ImGuiSliderFlags_AlwaysClamp : 0);
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(width * 0.36f);
             ch |= ImGui::InputInt("##t", &v.i, 0, 0);
+            if (st.hasRange == 1) v.i = std::max((int)st.minValue, std::min((int)st.maxValue, v.i));
             break;
         case kText: {
             char buf[256];
@@ -462,6 +468,7 @@ bool SettingControl(const LabSetting& st, const std::string& name, Value& v, flo
         case kVec3: ch = ImGui::DragFloat3("##v", v.f, 0.1f); break;
         case kColor3: ch = ImGui::ColorEdit3("##v", v.f); break;
         case kVec4: ch = ImGui::DragFloat4("##v", v.f, 0.05f); break;
+        case kVec2: ch = ImGui::DragFloat2("##v", v.f, 0.05f); break;
         case kEnum: {
             auto& opts = Options(st);
             const char* cur = v.option < (int)opts.size() ? opts[v.option].c_str() : "-";
@@ -484,9 +491,9 @@ bool SettingControl(const LabSetting& st, const std::string& name, Value& v, flo
 }
 
 const char* KindLabel(uint8_t k) {
-    static const char* n[] = {"value", "toggle", "number", "whole number", "text", "x, y, z", "colour", "4 numbers",
-                              "choice", "object"};
-    return k < 10 ? n[k] : "value";
+    static const char* n[] = {"unknown type", "toggle", "number", "whole number", "text", "x, y, z", "colour",
+                              "4 numbers", "choice", "object", "x, y"};
+    return k < 11 ? n[k] : "value";
 }
 
 std::string FireScript(int i) {
@@ -504,7 +511,22 @@ std::string FireScript(int i) {
     return s + "e:Start()\n";
 }
 
+bool LooksLikePlainValue(const std::string& t);
+
 void Fire(int i) {
+    size_t n = 0;
+    const LabType& t = Types(&n)[i];
+    auto& vals = S.values[i];
+    for (uint32_t k = 0; k < t.settingCount && k < vals.size(); k++) {
+        const LabSetting& st = Setting(t.settingFirst + k);
+        if (st.kind == kObject && vals[k].changed && LooksLikePlainValue(vals[k].text)) {
+            S.lastOk = false;
+            S.lastResult = Friendly(GameString(st.nameAddr)) + " needs a game object, not \"" + vals[k].text +
+                           "\". Clear it (reset) or give Lua that makes one.";
+            Log("Not fired %s: %s", S.names[i].c_str(), S.lastResult.c_str());
+            return;
+        }
+    }
     std::string script = FireScript(i);
     // written before firing, so if the game crashes the log and the next start say what it was
     Log("Firing %s:\n%s", S.names[i].c_str(), script.c_str());
@@ -524,6 +546,49 @@ void Stop(int i) {
     S.lastOk = rc == 0;
     S.lastResult = rc == 0 ? "Stopped " + S.titles[i] : "Couldn't stop it (it wasn't fired, or it can't be stopped)";
     Log("%s: %s", S.names[i].c_str(), S.lastResult.c_str());
+}
+
+// What a setting accepts, for the line under it. Ranges marked "from the game" come from its own Tool_MinMaxValues.
+std::string Accepts(const LabSetting& st) {
+    char b[200];
+    if (st.hasRange == 2)
+        return st.kind == kBool ? "on or off (type guessed from its name: the game doesn't say)"
+                                : "a number (type guessed from its name: the game doesn't say; the slider range is a suggestion)";
+    switch (st.kind) {
+        case kBool: return "on or off";
+        case kFloat:
+            if (st.hasRange == 1) snprintf(b, sizeof b, "a number from %g to %g (the game's range)", st.minValue, st.maxValue);
+            else snprintf(b, sizeof b, "any number; the slider shows a suggested range (the game gives none)");
+            return b;
+        case kInt:
+            if (st.hasRange == 1) snprintf(b, sizeof b, "a whole number from %g to %g (the game's range)", st.minValue, st.maxValue);
+            else snprintf(b, sizeof b, "any whole number; the slider shows a suggested range (the game gives none)");
+            return b;
+        case kText: return "text, e.g. a name the game uses";
+        case kVec3: return "three numbers: x, y, z";
+        case kVec2: return "two numbers: x, y";
+        case kColor3: return "a colour: red, green, blue, each 0 to 1";
+        case kVec4: return "four numbers";
+        case kEnum: {
+            snprintf(b, sizeof b, "one of %u options from the game", Enum(st.enumIndex).count);
+            return b;
+        }
+        case kObject: {
+            std::string t = st.objTypeAddr ? GameString(st.objTypeAddr) : "game object";
+            return "a " + t + " (a game object, not a number or text). Leave empty unless you have Lua for one, "
+                   "e.g. game:markerBarn():CreateMarker(0) for a marker";
+        }
+        default: return "unknown type: leave empty unless you know what it takes";
+    }
+}
+
+bool LooksLikePlainValue(const std::string& t) {
+    if (t.empty()) return false;
+    if (t == "true" || t == "false") return true;
+    if (t.front() == '"' || t.front() == '\'') return true;
+    char* end = nullptr;
+    strtod(t.c_str(), &end);
+    return end && *end == 0;
 }
 
 // ---------------------------------------------------------------- Game functions tab
@@ -589,6 +654,9 @@ void Details(int i) {
         if (st.kind == kObject && st.objTypeAddr) kind += ": " + GameString(st.objTypeAddr);
         Dim("%s", kind.c_str());
         if (st.descAddr) Dim("%s", Unquote(GameString(st.descAddr)).c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, st.hasRange == 1 ? kSky300 : st.hasRange == 2 ? kAmber300 : White(0.70f));
+        ImGui::TextWrapped("Accepts: %s", Accepts(st).c_str());
+        ImGui::PopStyleColor();
         if (SettingControl(st, sname, vals[k], w * 0.80f)) {
             vals[k].changed = true;
             anyChange = true;

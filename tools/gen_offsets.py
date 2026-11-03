@@ -194,18 +194,48 @@ for fs in type_settings.values():
             enum_opts.setdefault(f['handler'], [])
             if f['name_va'] not in [v for v, _ in enum_opts[f['handler']]]:
                 enum_opts[f['handler']].append((f['name_va'], f['name']))
-# setting kinds by type handler (Sky 0.35.2); enums and objects are recognised from their data
+# setting kinds by type handler (Sky 0.35.2); the rest are learned from every setting sharing a handler
 KIND = {0xDD7F30: 1, 0xDF5F9C: 2, 0xE7C718: 3, 0xF6CC58: 3, 0xDDB4A0: 4, 0xDDFE0C: 5, 0xFA4354: 6, 0x135B874: 7}
-# 0 unknown, 1 bool, 2 float, 3 int, 4 text, 5 vec3, 6 colour rgb, 7 vec4/rgba, 8 enum, 9 object reference
+# 0 unknown, 1 bool, 2 float, 3 int, 4 text, 5 vec3, 6 colour rgb, 7 vec4/rgba, 8 enum, 9 object reference, 10 vec2
+def attr_map(f):
+    m = {}
+    for kva, vva in f['attrs']:
+        key, val = (cstr(kva) if kva else None), (cstr(vva) if vva else None)
+        m.setdefault(key, val)
+    return m
+handler_evidence = {}
+for fs in type_settings.values():
+    for f in fs:
+        if ENUM_CONST.match(f['name']):
+            continue
+        a = attr_map(f)
+        ev = handler_evidence.setdefault(f['handler'], {'obj': 0, 'objtype': {}, 'n': 0})
+        ev['n'] += 1
+        dv = (a.get('Tool_DefaultValue') or a.get(None) or '').strip()
+        if 'Tool_ObjectType' in a or a.get('Tool_Nullable') == 'true' or dv in ('null', 'NULL', 'nullptr'):
+            ev['obj'] += 1
+        if a.get('Tool_ObjectType'):
+            ev['objtype'][a['Tool_ObjectType']] = ev['objtype'].get(a['Tool_ObjectType'], 0) + 1
 def kind_of(f):
+    a = attr_map(f)
+    if a.get('Tool_IsColor') == 'true':
+        return 6
+    if a.get('Tool_IsVector2') == 'true':
+        return 10
     if f['handler'] in KIND:
         return KIND[f['handler']]
     if len(enum_opts.get(f['handler'], [])) >= 2:
         return 8
-    keys = [cstr(k) if k else None for k, _ in f['attrs']]
-    if 'Tool_ObjectType' in keys or 'Tool_Nullable' in keys:
+    if 'Tool_ObjectType' in a or a.get('Tool_Nullable') == 'true' or handler_evidence.get(f['handler'], {}).get('obj'):
         return 9
     return 0
+def handler_objtype(h):
+    t = handler_evidence.get(h, {}).get('objtype') or {}
+    return max(t, key=t.get) if t else None
+def min_max(f):
+    v = attr_map(f).get('Tool_MinMaxValues')
+    nums = re.findall(r'-?\d+(?:\.\d+)?', v or '')
+    return (float(nums[0]), float(nums[1])) if len(nums) >= 2 else None
 
 
 def category(n):
@@ -230,6 +260,18 @@ def category(n):
     return 10
 
 settings_out, notes_out, enums_out, enum_index = [], [], [], {}
+fallback_types = []
+def guess_kind(n):
+    """(kind, range flag) from a setting name; range flag 2 = type guessed from the name"""
+    low = n.lower()
+    if re.match(r'(is|use|show|hide|only|allow|disable|enable|can|should|has|loop|networked|local|fire)', low) \
+            or low in ('enabled', 'visible', 'active'):
+        return (1, 2)
+    if re.search(r'(duration|speed|fade|time|delay|scale|radius|dist|amount|strength|force|intensity|mult|alpha|'
+                 r'height|size|angle|rate|volume|pitch|weight|percent)', low):
+        return (2, 2)
+    return (0, 0)
+NOT_SETTINGS = {'true', 'false', 'null', 'nullptr'}
 rows = []
 for pc, name, name_va, obj, accessor in sorted(types, key=lambda t: t[1].lower()):
     k = bisect.bisect_right(all_sites, pc)
@@ -245,24 +287,47 @@ for pc, name, name_va, obj, accessor in sorted(types, key=lambda t: t[1].lower()
             continue
         kd = kind_of(f)
         dflt = desc = objt = 0
+        explicit_default = False
         for kva, vva in f['attrs']:
             key, val = (cstr(kva) if kva else None), (cstr(vva) if vva else None)
             if val is None:
                 continue
-            if key is None and not dflt:
+            if key == 'Tool_DefaultValue':
+                dflt, explicit_default = vva, True
+            elif key is None and not dflt:
                 dflt = vva
             elif key == 'Tool_Description':
                 desc = vva
                 descs.add(vva)
             elif key == 'Tool_ObjectType':
                 objt = vva
+        if kd == 9 and not objt:
+            # object type named on another setting with the same handler: find that string's address
+            name_t = handler_objtype(f['handler'])
+            if name_t:
+                b = ('\0' + name_t + '\0').encode()
+                o = d.find(b, ro['off'], ro['off'] + ro['size'])
+                objt = (o + 1 - ro['off'] + ro['va']) if o >= 0 else 0
+        mm = min_max(f)
         en = 0xFFFF
         if kd == 8:
             if f['handler'] not in enum_index:
                 enum_index[f['handler']] = len(enums_out)
                 enums_out.append(enum_opts[f['handler']])
             en = enum_index[f['handler']]
-        settings_out.append((f['name_va'], dflt, desc, objt, min(f['offset'], 0xFFFF), kd, en))
+        lo, hi = mm if mm else (0.0, 0.0)
+        settings_out.append((f['name_va'], dflt, desc, objt, min(f['offset'], 0xFFFF), kd, en, lo, hi, 1 if mm else 0))
+    if len(settings_out) == s0:
+        # no setting records found: fall back to setting names referenced next to the registration (type unknown)
+        known = set()
+        for _, va in refs[bisect.bisect_right(ref_pcs, pc):bisect.bisect_left(ref_pcs, end)]:
+            nm_ = cstr(va)
+            if nm_ and va not in known and re.fullmatch(r'[a-z][A-Za-z0-9_]{1,40}', nm_) and nm_ not in NOT_SETTINGS \
+                    and len(settings_out) - s0 < 32:
+                known.add(va)
+                kd_, flag_ = guess_kind(nm_)
+                settings_out.append((va, 0, 0, 0, 0, kd_, 0xFFFF, 0.0, 0.0, flag_))
+        fallback_types.append(name)
     seen = set()
     for _, va in refs[bisect.bisect_right(ref_pcs, pc):bisect.bisect_left(ref_pcs, end)]:
         s_ = cstr(va)
@@ -291,11 +356,12 @@ with open(OUT, 'w') as f:
     f.write('static const LabType kTypes[] = {\n')
     for r in rows:
         f.write('{0x%X,0x%08X,0x%X,0x%X,%d,%d,%d,%d,%d,0x%X},\n' % r)
-    f.write('};\n// name, default value, description, object type (string addresses), offset in the event, kind, enum\n')
+    f.write('};\n// name, default value, description, object type (string addresses), offset in the event, kind, enum,\n')
+    f.write('// the game\'s valid range (Tool_MinMaxValues) and whether it has one\n')
     f.write('static const LabSetting kSettings[] = {\n')
     for r in settings_out:
-        f.write('{0x%X,0x%X,0x%X,0x%X,0x%X,%d,%d},\n' % r)
-    f.write('{0,0,0,0,0,0,0}};\nstatic const LabEnum kEnums[] = {\n')
+        f.write('{0x%X,0x%X,0x%X,0x%X,0x%X,%d,%d,%.6ff,%.6ff,%d},\n' % r)
+    f.write('{0,0,0,0,0,0,0,0.f,0.f,0}};\nstatic const LabEnum kEnums[] = {\n')
     first = 0
     for opts in enums_out:
         f.write('{%d,%d},' % (first, len(opts)))
@@ -312,5 +378,5 @@ with open(OUT, 'w') as f:
         f.write(','.join('0x%X' % v for v in notes_out[i:i + 8]) + ',\n')
     f.write('0};\n')
 import collections
-print(sum(1 for r in rows if r[9]), 'with a known parent;', len(accessors), 'parent accessors;', len(rows), 'types,', len(settings_out), 'settings', dict(collections.Counter(r[5] for r in settings_out)),
+print(len(fallback_types), 'types with setting names only;', sum(1 for r in rows if r[9]), 'with a known parent;', len(accessors), 'parent accessors;', len(rows), 'types,', len(settings_out), 'settings', dict(collections.Counter(r[5] for r in settings_out)), sum(1 for r in settings_out if r[9] == 1), 'with a game range;', sum(1 for r in settings_out if r[9] == 2), 'guessed from names;',
       len(enums_out), 'option lists,', len(notes_out), 'notes ->', OUT)
