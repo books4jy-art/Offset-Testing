@@ -531,10 +531,11 @@ void Fire(int i) {
     // written before firing, so if the game crashes the log and the next start say what it was
     Log("Firing %s:\n%s", S.names[i].c_str(), script.c_str());
     WriteTextFile(DataPath("offsetlab_last_fired.txt"), S.names[i] + "\n");
-    int rc = RunLua(script);
+    int rc = RunLua(script, "Fire " + S.names[i]);
     S.lastOk = rc == 0;
-    S.lastResult = rc == 0 ? "Fired " + S.titles[i]
+    S.lastResult = rc == 0 ? "Fired " + S.titles[i] + " (a script error would show in the Log tab)"
                  : rc == -1 ? "The game isn't ready yet (enter the world first)"
+                 : rc == -3 ? "The game isn't running frames right now; try again"
                             : "The game refused it (code " + std::to_string(rc) + "): not an event, or a setting is wrong";
     Log("%s: %s", S.names[i].c_str(), S.lastResult.c_str());
 }
@@ -542,7 +543,8 @@ void Fire(int i) {
 void Stop(int i) {
     std::string n = Quote(S.names[i]);
     int rc = RunLua("local e = __offsetLab and __offsetLab[" + n + "]\nif e == nil then error(\"not fired\") end\n"
-                    "if not pcall(function() e:Stop() end) then e:Terminate() end\n__offsetLab[" + n + "] = nil\n");
+                    "if not pcall(function() e:Stop() end) then e:Terminate() end\n__offsetLab[" + n + "] = nil\n",
+                    "Stop " + S.names[i]);
     S.lastOk = rc == 0;
     S.lastResult = rc == 0 ? "Stopped " + S.titles[i] : "Couldn't stop it (it wasn't fired, or it can't be stopped)";
     Log("%s: %s", S.names[i].c_str(), S.lastResult.c_str());
@@ -868,14 +870,14 @@ void GameFunctionsTab() {
 // ---------------------------------------------------------------- Lua tab
 
 void LuaTab() {
-    Dim("Runs in the game's Lua. The result is the game's code: 0 = ran without an error.");
+    Dim("Runs in the game's Lua, on the game's main thread at its next frame. Errors show in the Log tab.");
     ImGui::InputTextMultiline("##lua", S.lua, sizeof S.lua, ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.55f));
     if (AccentButton("Run", ImVec2(120, 0))) {
-        int rc = RunLua(S.lua);
-        S.luaHistory.insert(S.luaHistory.begin(), std::string(rc == 0 ? "ok  " : rc == -1 ? "not ready  " : "error  ") +
+        int rc = RunLua(S.lua, "Lua tab");
+        S.luaHistory.insert(S.luaHistory.begin(), std::string(rc == 0 ? "sent  " : rc == -1 ? "not ready  " : "error  ") +
                                                       std::string(S.lua).substr(0, 80));
         if (S.luaHistory.size() > 30) S.luaHistory.pop_back();
-        Log("Lua: %s", rc == 0 ? "ok" : rc == -1 ? "game not ready" : "error");
+        Log("Lua: %s", rc == 0 ? "sent" : rc == -1 ? "game not ready" : "error");
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear")) S.lua[0] = 0;

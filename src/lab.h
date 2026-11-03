@@ -62,8 +62,10 @@ uint32_t Fnv1a(const std::string& s);
 // for the moment. False (and a log line) if the address isn't part of the game library.
 bool WriteGameMemory(uint32_t offset, const void* data, size_t len);
 uintptr_t GameObject();                      // the game's main object (0 when not in game)
-// Runs Lua in the game. Returns the game's result code (0 = ok); -1 when the game isn't ready.
-int RunLua(const std::string& script);
+// Runs Lua in the game, on the game's main thread (queued for its next frame). Returns 0 when queued (errors are
+// logged later, under `what`), -1 when the game isn't ready, -3 when the queue is full. If the frame hook can't be
+// placed, runs directly and returns the game's result code (0 = ok).
+int RunLua(const std::string& script, const std::string& what = "");
 
 // ---- exported functions (read from the game's own symbol table) ----
 struct ExportedFn { uintptr_t offset; size_t size; std::string name; };

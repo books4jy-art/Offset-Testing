@@ -1,6 +1,8 @@
 // Game access: finding libBootloader.so, crash-safe reads, running Lua, the type table.
 #include "lab.h"
 
+#include "dobby.h"
+
 #include <android/log.h>
 #include <dlfcn.h>
 #include <link.h>
@@ -8,6 +10,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
@@ -87,6 +90,8 @@ namespace addr {
 constexpr uintptr_t kGamePointer = 0x33A5E80;  // pointer to the game's main object
 constexpr uintptr_t kGameLuaState = 0x20;      // lua_State* inside the game object
 constexpr uintptr_t kRunLua = 0x29ADFA4;       // int (lua_State*, const char* script), 0 = ok
+constexpr uintptr_t kFrameHook = 0x17BB458;    // called every frame on the game's main thread
+constexpr uint32_t kFrameHookFirst = 0xA9BC7BFD;  // its first instruction: stp x29, x30, [sp, #-0x40]!
 }  // namespace addr
 
 // ---------------------------------------------------------------- base & memory
@@ -218,12 +223,67 @@ uintptr_t GameObject() {
     return game;
 }
 
-int RunLua(const std::string& script) {
+// Runs Lua right now, on whatever thread calls it.
+static int RunLuaHere(const std::string& script) {
     uintptr_t base = GameBase(), game = GameObject(), L = 0;
     if (!base || !game || !ReadMemory(game + addr::kGameLuaState, &L, sizeof L) || !L)
         return -1;
     using RunFn = int (*)(void*, const char*);
     return reinterpret_cast<RunFn>(base + addr::kRunLua)(reinterpret_cast<void*>(L), script.c_str());
+}
+
+// Lua isn't thread-safe: the game runs its own Lua on its main thread, so scripts from the window are queued and run
+// at the start of a function the game calls every frame on that thread (TheVoid's Lua update hook, 0x17BB310 in
+// 0.35.1). If the hook can't be placed, scripts run directly as before.
+namespace {
+struct Job { std::string script, what; };
+std::mutex gJobMutex;
+std::deque<Job> gJobs;
+std::atomic<int> gHook{0};  // 0 = not tried, 1 = active, -1 = failed (run directly)
+
+void OnFrame(void*, DobbyRegisterContext*) {
+    std::deque<Job> jobs;
+    {
+        std::lock_guard<std::mutex> lk(gJobMutex);
+        for (int i = 0; i < 32 && !gJobs.empty(); i++) {
+            jobs.push_back(std::move(gJobs.front()));
+            gJobs.pop_front();
+        }
+    }
+    for (auto& j : jobs) {
+        int r = RunLuaHere(j.script);
+        if (r == -1) Log("%s: enter the world first", j.what.empty() ? "Lua" : j.what.c_str());
+        else if (r != 0) Log("%s: the game reported a script error (%d)", j.what.empty() ? "Lua" : j.what.c_str(), r);
+    }
+}
+
+void InstallFrameHook() {
+    uintptr_t base = GameBase();
+    if (!base) return;
+    uint32_t first = 0;
+    if (!ReadMemory(base + addr::kFrameHook, &first, 4) || first != addr::kFrameHookFirst) {
+        Log("Lua: the frame function isn't what 0.35.2 has (0x%08X); running Lua directly", first);
+        gHook = -1;
+        return;
+    }
+    if (DobbyInstrument(reinterpret_cast<void*>(base + addr::kFrameHook), OnFrame) != 0) {
+        Log("Lua: couldn't hook the frame function; running Lua directly");
+        gHook = -1;
+        return;
+    }
+    gHook = 1;
+    Log("Lua runs on the game's main thread (frame hook at 0x%zX)", (size_t)addr::kFrameHook);
+}
+}  // namespace
+
+int RunLua(const std::string& script, const std::string& what) {
+    if (gHook == 0) InstallFrameHook();
+    if (gHook != 1) return RunLuaHere(script);
+    if (!GameObject()) return -1;
+    std::lock_guard<std::mutex> lk(gJobMutex);
+    if (gJobs.size() > 256) return -3;  // the game isn't running frames
+    gJobs.push_back({script, what});
+    return 0;
 }
 
 // ---------------------------------------------------------------- files next to the mod

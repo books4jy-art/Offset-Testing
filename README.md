@@ -25,6 +25,12 @@ Download `libOffsetLab.so` from the [latest release](../../releases/latest) and 
 
 ### Features
 
+Lua runs on the game's main thread: scripts are queued and run at the start of a function the game calls every frame
+(`0x17BB458`; TheVoid's Lua update hook, `0x17BB310` in 0.35.1, hooked with Dobby after checking its first
+instruction). Running Lua from the window's own thread raced the game's Lua and could crash it. Every event a feature
+starts gets all its settings at the game's defaults first (objects such as `npc` set to nil): events made from Lua
+don't get them, and AvatarDisableShadow crashed reading an uninitialised `npc`.
+
 Each one starts one of the game's own events from Lua (kept as `OffsetLab[key]` in the game's Lua, so it can be
 stopped) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
 **Reset**, which puts the game's normal behaviour back. All local to your game.
@@ -50,7 +56,8 @@ The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 | Edit outfits | height and size sliders | TheVoid's avatar height/scale values (`0x313970C`, `0x3139710`; `0x31396FC`/`0x3139700` in 0.35.1) |
 | Emotes | level, speed, loop and mirror; scrolling list with icons; Stop | `Data/Resources/CollectibleDefs.json`, `AvatarPlayEmote` |
 | Camera | shake (speed, force, time); colour filters with strength and invert; sunglasses, random tint, surreal blue, caustics, sketch, hide cinematic bars; rain on screen (amount, size, density); slow motion; photo flash; lens presets; debug and manual cameras (experimental) | `SetCameraShake`, `CameraDesaturationEffect`, `CameraSunglassFade`, `CameraRandomTint`, `CameraSurrealBlueEffect`, `CameraCausticsEffect`, `CameraArtBookEffects`, `DisableCinematicBar`, `CameraScreenRainDropEffect`, `SetBulletTime`, `CameraPhotoFlash`, `LevelCameraDefaults`, `DebugCamera`, `ManualControlCamera` |
-| Disable terrain | toggle | the game's terrain switch, byte at `0x3169CEC` (TheVoid's `world.hide_terrain`, `0x3169CDC` in 0.35.1) |
+| No collision (experimental) | toggle | the call that fills the collision list (`0x296CAD0`, `bl 0x296FCC0`) replaced by a NOP; its count is zeroed just before, so nothing is found to collide with. Off restores the call |
+| Hide terrain | toggle | the game's terrain switch, byte at `0x3169CEC` (TheVoid's `world.hide_terrain`, `0x3169CDC` in 0.35.1): hides the visible ground only |
 | Disable reset barrier | toggle (experimental) | `AvatarSetBoundaryPlane` with no plane |
 | Disable shadow | toggle | `AvatarDisableShadow` |
 | Surface friction | slider | the game's "slippery ground" switch (byte at `0x34AFCEC`) and the value it loads (instructions at `0x249E524`, normally 0.2), patched to the slider's value; Reset restores both |
@@ -77,7 +84,8 @@ declared in `src/canvas_api.h`); nothing from the game is stored in this reposit
   records each type's parent (the class tree: a type's parent accessor returns the parent's type object), so the mod can
   tell events from everything else; parents not resolvable from the file are read at runtime from the type object
   (+0x30).
-- Game addresses used: game object pointer `0x33A5E80`, its Lua state at `+0x20`, the game's Lua runner `0x29ADFA4`.
+- Game addresses used: game object pointer `0x33A5E80`, its Lua state at `+0x20`, the game's Lua runner `0x29ADFA4`,
+  the per-frame function where Lua runs `0x17BB458`.
 
 ## Building
 

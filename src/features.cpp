@@ -106,18 +106,100 @@ const char* kPrelude =
 
 bool Run(const std::string& what, const std::string& script) {
     // what == "" for repeats (Scatter, repeated Shout): only problems are logged
-    int r = RunLua(script);
+    int r = RunLua(script, what.empty() ? "Repeat" : what);
     const char* w = what.empty() ? "Repeat" : what.c_str();
     if (r == -1) Log("%s: enter the world first", w);
+    else if (r == -3) Log("%s: the game isn't running frames right now", w);
     else if (r != 0) Log("%s: the game reported a script error (%d)", w, r);
     else if (!what.empty()) Log("%s", w);
     return r == 0;
 }
 
 // Starts event `type` with the settings, keeping it as OffsetLab[key] (an earlier one under the key is stopped).
-bool StartEvent(const std::string& what, const std::string& key, const char* type, const std::vector<Set>& sets,
+std::string Quote(const std::string& s);
+
+std::vector<float> NumbersIn(const std::string& t) {
+    std::vector<float> v;
+    const char* p = t.c_str();
+    while (*p) {
+        if (isdigit((unsigned char)*p) || ((*p == '-' || *p == '.') && (isdigit((unsigned char)p[1]) || p[1] == '.'))) {
+            char* end = nullptr;
+            v.push_back(strtof(p, &end));
+            p = end;
+        } else {
+            p++;
+        }
+    }
+    return v;
+}
+
+// Every setting of the event at the game's own default (objects such as npc: nil). Events made from Lua don't get
+// these: AvatarDisableShadow read its npc setting while it still held uninitialised memory and crashed the game.
+std::vector<Set> GameDefaults(const char* type) {
+    std::vector<Set> out;
+    auto it = gTypeIndex.find(type);
+    if (it == gTypeIndex.end()) {
+        out.push_back({"npc", "nil", ""});  // not in the table (AvatarPlayEmote): at least no stray npc
+        return out;
+    }
+    size_t n = 0;
+    const LabType& t = Types(&n)[it->second];
+    for (uint32_t i = 0; i < t.settingCount; i++) {
+        const LabSetting& st = Setting(t.settingFirst + i);
+        std::string name = GameString(st.nameAddr);
+        if (name.empty() || !(isalpha((unsigned char)name[0]))) continue;
+        bool plain = true;
+        for (char c : name) plain &= isalnum((unsigned char)c) || c == '_';
+        if (!plain) continue;
+        std::string def = st.defaultAddr ? GameString(st.defaultAddr) : std::string();
+        if (def.size() >= 2 && def.front() == '"' && def.back() == '"') def = def.substr(1, def.size() - 2);
+        std::vector<float> nums = NumbersIn(def);
+        char b[160];
+        switch (st.kind) {
+            case kBool: out.push_back({name, def.find("true") != std::string::npos ? "true" : "false", ""}); break;
+            case kFloat:
+                snprintf(b, sizeof b, "%g", nums.empty() ? (st.hasRange == 1 ? st.minValue : 0.f) : nums[0]);
+                out.push_back({name, b, ""});
+                break;
+            case kInt:
+                snprintf(b, sizeof b, "%d", nums.empty() ? 0 : (int)nums[0]);
+                out.push_back({name, b, ""});
+                break;
+            case kText:
+                out.push_back({name, Quote(def.size() < 64 && def.find(' ') == std::string::npos ? def : ""), ""});
+                break;
+            case kVec2: case kVec3: case kVec4: case kColor3: {
+                int k = st.kind == kVec2 ? 2 : st.kind == kVec4 ? 4 : 3;
+                std::string v = "{";
+                for (int j = 0; j < k; j++) {
+                    snprintf(b, sizeof b, "%s%g", j ? ", " : "", j < (int)nums.size() ? nums[j] : (st.kind == kColor3 ? 1.f : 0.f));
+                    v += b;
+                }
+                out.push_back({name, v + "}", ""});
+                break;
+            }
+            case kEnum: {
+                if (st.enumIndex == 0xFFFF) break;
+                const LabEnum& e = Enum(st.enumIndex);
+                int pick = 0;
+                for (uint32_t j = 0; j < e.count; j++)
+                    if (!def.empty() && GameString(EnumOptionAddr(e.first + j)) == def) pick = (int)j;
+                if (e.count) out.push_back({name, Quote(GameString(EnumOptionAddr(e.first + pick))), std::to_string(pick)});
+                break;
+            }
+            case kObject: out.push_back({name, "nil", ""}); break;
+            default:
+                if (st.objTypeAddr || name == "npc" || name == "npcToMimic") out.push_back({name, "nil", ""});
+        }
+    }
+    return out;
+}
+
+bool StartEvent(const std::string& what, const std::string& key, const char* type, const std::vector<Set>& given,
                 bool allowUnlisted = false) {
     if (!SafeToFire(type, allowUnlisted)) return false;
+    std::vector<Set> sets = GameDefaults(type);  // first the game's defaults, then ours
+    sets.insert(sets.end(), given.begin(), given.end());
     std::string s = kPrelude;
     s += "stop(\"" + key + "\")\n";
     s += "local e = game:eventBarn():AddEventByMetaName(\"" + std::string(type) + "\")\n";
@@ -142,7 +224,7 @@ bool StopEvent(const std::string& what, const std::string& key) {
     return Run(what, std::string(kPrelude) + "stop(\"" + key + "\")\n");
 }
 
-std::string Quote(const std::string& s) {
+std::string Quote(const std::string& s) {  // a Lua string
     std::string o = "\"";
     for (char c : s) {
         if (c == '"' || c == '\\') o += '\\';
@@ -209,7 +291,7 @@ const Spell kSpells[] = {
     {"dragon_dance", true}, {"diving", true}, {"triggered_tiny", true}, {"tiny", true}, {"shrink", true},
     {"grow", true}, {"huge", true}, {"resize_potion", true}, {"potion_growth_tiny", true},
     {"potion_growth_huge", true}, {"potion_growth_keychain", true}, {"height_small_3x_handhold", true},
-    {"peewee", true}, {"glow", false}, {"glow_rainbow", false}, {"glow_tgc", false}, {"hairtint", false},
+    {"glow", false}, {"glow_rainbow", false}, {"glow_tgc", false}, {"hairtint", false},
     {"hairtint_rainbow", false}, {"trail", false}, {"trail_bicolor", false}, {"trail_rainbow", false},
     {"ground_trail_rainbow", false}, {"ground_trail_star", false}, {"bloom_rose_trail", false},
     {"bloom_sakura", false}, {"butterfly_pastel", false}, {"rainbow", false}, {"rainbow_handhold", false},
@@ -265,6 +347,7 @@ struct Features {
     bool capeOn = false;
     // world
     bool terrainOff = false;
+    bool noCollision = false;
     bool barrierOff = false;
     bool shadowOff = false;
     float friction = 1.f;
@@ -292,6 +375,24 @@ bool SetSwitch(const char* what, uint32_t off, bool on) {
     uint8_t v = on ? 1 : 0;
     bool ok = WriteGameMemory(off, &v, 1);
     Log("%s %s%s", what, on ? "on" : "off", ok ? "" : " (write failed)");
+    return ok;
+}
+
+// No collision: the call at 0x296CAD0 fills the list of things you could collide with; its count is set to 0 just
+// before (0x296CAA0), so skipping the call (a NOP) leaves the list empty.
+constexpr uint32_t kCollisionCallAt = 0x296CAD0;
+constexpr uint32_t kCollisionCall = 0x94000C7C;  // bl 0x296FCC0
+constexpr uint32_t kNop = 0xD503201F;
+
+bool SetNoCollision(bool on) {
+    uint32_t cur = 0;
+    if (!GameBase() || !ReadMemory(GameBase() + kCollisionCallAt, &cur, 4) || (cur != kCollisionCall && cur != kNop)) {
+        Log("No collision: the game code isn't what 0.35.2 has (0x%08X); not changed", cur);
+        return false;
+    }
+    uint32_t v = on ? kNop : kCollisionCall;
+    bool ok = WriteGameMemory(kCollisionCallAt, &v, 4);
+    Log("No collision %s%s", on ? "on" : "off", ok ? "" : " (write failed)");
     return ok;
 }
 
@@ -411,6 +512,7 @@ struct More {
     char anim[64] = "AirplaneArmsEmote_1";
     // follow (Lua probe)
     std::string probe;
+    double probeAt = 0;
     // outfits
     Json outfitDefs;
     bool outfitTried = false;
@@ -535,7 +637,7 @@ void ProbeLua() {
         "local f = io and io.open(" + Quote(path) + ", \"w\")\n"
         "if not f then error(\"no file access from Lua\") end\n"
         "f:write(table.concat(out, \"\\n\")); f:close()\n";
-    if (Run("Lua probe written to offsetlab_lua_api.txt", s)) M.probe = ReadTextFile(path);
+    if (Run("Lua probe sent; it writes offsetlab_lua_api.txt", s)) M.probeAt = ImGui::GetTime() + 1.5;
 }
 
 // ---------------------------------------------------------------- sub-tabs
@@ -636,6 +738,11 @@ void PlayerSection(bool inWorld) {
         "positions yet. To find a way in, Look for access lists what the game's Lua offers (players, NPCs, "
         "barns) and saves it next to the mod as offsetlab_lua_api.txt. Send me that file and I'll build Follow on it.");
     if (ImGui::Button("Look for access")) ProbeLua();
+    if (M.probeAt > 0 && ImGui::GetTime() >= M.probeAt) {
+        M.probeAt = 0;
+        M.probe = ReadTextFile(DataPath("offsetlab_lua_api.txt"));
+        if (M.probe.empty()) Log("Lua probe: no file written (the game's Lua may have no file access; see the Log)");
+    }
     if (!M.probe.empty()) {
         Dim("%zu bytes found:", M.probe.size());
         ImGui::InputTextMultiline("##probe", &M.probe[0], M.probe.size() + 1, ImVec2(-1, 300),
@@ -946,10 +1053,13 @@ void CameraSection() {
 
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
-    if (Toggle("Disable terrain", &F.terrainOff,
-               "Turns the ground and its collision off, so you fall or pass through barriers. (TheVoid's "
-               "world.hide_terrain switch.)"))
-        if (!SetSwitch("Disable terrain", kTerrainSwitch, F.terrainOff)) F.terrainOff = !F.terrainOff;
+    if (Toggle("No collision", &F.noCollision,
+               "Experimental: the game's collision search returns nothing, so you pass through the ground, walls and "
+               "barriers (you'll fall). Switch off to get collision back."))
+        if (!SetNoCollision(F.noCollision)) F.noCollision = !F.noCollision;
+    if (Toggle("Hide terrain", &F.terrainOff,
+               "Hides the visible ground (collision stays). TheVoid's world.hide_terrain switch."))
+        if (!SetSwitch("Hide terrain", kTerrainSwitch, F.terrainOff)) F.terrainOff = !F.terrainOff;
     if (Toggle("Disable reset barrier", &F.barrierOff,
                "Experimental: sets the level's boundary plane to none (AvatarSetBoundaryPlane left empty), so "
                "going past it shouldn't reset you. Switch off to give the level its plane back.")) {
