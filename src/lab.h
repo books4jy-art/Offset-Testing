@@ -66,6 +66,7 @@ uintptr_t GameObject();                      // the game's main object (0 when n
 // logged later, under `what`), -1 when the game isn't ready, -3 when the queue is full. If the frame hook can't be
 // placed, runs directly and returns the game's result code (0 = ok).
 int RunLua(const std::string& script, const std::string& what = "");
+std::string LuaStatus();  // where Lua runs and how many scripts wait
 
 // ---- exported functions (read from the game's own symbol table) ----
 struct ExportedFn { uintptr_t offset; size_t size; std::string name; };

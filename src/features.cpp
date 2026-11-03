@@ -513,6 +513,7 @@ struct More {
     // follow (Lua probe)
     std::string probe;
     double probeAt = 0;
+    double crawlStopAt = 0;  // when to stop the "crawl 0" event after Crawl off
     // outfits
     Json outfitDefs;
     bool outfitTried = false;
@@ -523,8 +524,6 @@ struct More {
     float height = 0.f, size = 0.f;
     // neck
     bool neck = false;
-    float neckSide = 0.f, neckUp = 0.f;
-    double neckNext = 0;
     // pogo
     float pogo = 8.f;
     bool pogoKeep = false;
@@ -585,28 +584,13 @@ void Bounce(bool quiet) {
                {{"minYSpeed", Num(M.pogo), ""}, {"forceTakeoff", "true", ""}, {"fireOnce", "true", ""}});
 }
 
-// Neck: the head looks at a marker placed at the camera, moved by the two sliders (experimental: needs the marker's
-// position to be readable from Lua; if not, the head just follows the camera).
-void Neck(bool quiet) {
-    if (!SafeToFire("GetCameraTransform") || !SafeToFire("AvatarLookAt")) return;
-    std::string s = kPrelude;
-    s += "local mb = game:markerBarn()\n"
-         "OffsetLab.camM = OffsetLab.camM or mb:CreateMarker(0)\n"
-         "OffsetLab.neckM = OffsetLab.neckM or mb:CreateMarker(0)\n"
-         "if not OffsetLab.neckcam then local g = game:eventBarn():AddEventByMetaName(\"GetCameraTransform\")\n"
-         "  pcall(function() g:target(OffsetLab.camM) end); pcall(function() g:fireOnce(false) end); g:Start()\n"
-         "  OffsetLab.neckcam = g end\n"
-         "local target = OffsetLab.camM\n"
-         "local ok, p = pcall(function() return OffsetLab.camM:pos() end)\n"
-         "if ok and type(p) == \"table\" then\n"
-         "  local x, y, z = p[1] or p.x, p[2] or p.y, p[3] or p.z\n"
-         "  if x and y and z then pcall(function() OffsetLab.neckM:pos({x + " + Num(M.neckSide) + ", y + " +
-         Num(M.neckUp) + ", z}) end); target = OffsetLab.neckM end\n"
-         "end\n"
-         "if not OffsetLab.neck then local e = game:eventBarn():AddEventByMetaName(\"AvatarLookAt\")\n"
-         "  pcall(function() e:target(target) end); pcall(function() e:overwriteAnim(true) end); e:Start()\n"
-         "  OffsetLab.neck = e end\n";
-    Run(quiet ? "" : "Neck turn on", s);
+// Neck: the head keeps looking at the camera (a marker that GetCameraTransform keeps at the camera's position), so
+// turning the camera turns the neck. Reading a marker's position from Lua (marker:pos() with no value) crashes the
+// game natively (0.7.0 log, 0x1462018), so there are no offset sliders.
+void Neck() {
+    Run("", std::string(kPrelude) + "OffsetLab.camM = OffsetLab.camM or game:markerBarn():CreateMarker(0)\n");
+    StartEvent("", "neckcam", "GetCameraTransform", {{"target", "OffsetLab.camM", ""}, {"fireOnce", "false", ""}});
+    StartEvent("Neck turn on", "neck", "AvatarLookAt", {{"target", "OffsetLab.camM", ""}, {"overwriteAnim", "true", ""}});
 }
 
 void NeckOff() { StopEvent("Neck turn off", "neck"), StopEvent("", "neckcam"); }
@@ -677,7 +661,12 @@ void PlayerSection(bool inWorld) {
         StopEvent("Scatter off", "scatter");
     if (Toggle("Crawl mode", &F.crawl, "Your avatar crawls.")) {
         if (F.crawl) StartEvent("Crawl on", "crawl", "AvatarCrawl", {{"crawlAmount", "1.0", ""}});
-        else StopEvent("Crawl off", "crawl");
+        else {  // stopping the event leaves the avatar crawling: set crawling to 0 and stand up
+            StartEvent("Crawl off", "crawl", "AvatarCrawl", {{"crawlAmount", "0.0", ""}});
+            StartEvent("", "stand", "AvatarSetStance",
+                       {{"stand", "true", ""}, {"instant", "true", ""}, {"fireOnce", "true", ""}});
+            M.crawlStopAt = ImGui::GetTime() + 1.0;
+        }
     }
     if (Toggle("Force flight", &F.flight, "Keeps you in flight mode while on.")) {
         if (F.flight) StartEvent("Force flight on", "flight", "AvatarForceEnableFlightMode", {{"fireOnce", "false", ""}});
@@ -723,14 +712,12 @@ void PlayerSection(bool inWorld) {
     Dim("Any of the game's animation names (T-pose uses AirplaneArmsEmote_1).");
 
     ImGui::TextUnformatted("Neck turn (experimental)");
-    Dim("Your head keeps looking at a point by the camera; the sliders move that point sideways and up/down. If the "
-        "game doesn't let Lua read the camera's position, the head just follows the camera.");
+    Dim("Your head keeps looking at the camera: turn the camera up, down or sideways and the neck follows. (Sliders "
+        "aren't possible: the game crashes when Lua reads a position, which offsets would need.)");
     if (ImGui::Checkbox("Neck turn on", &M.neck)) {
-        if (M.neck) Neck(false);
+        if (M.neck) Neck();
         else NeckOff();
     }
-    Slider("neckside", &M.neckSide, -30.f, 30.f, 0.f, "sideways %.1f");
-    Slider("neckup", &M.neckUp, -30.f, 30.f, 0.f, "up/down %.1f");
 
     Section("FOLLOW", nullptr);
     ImGui::TextColored(kAmber300, "Not available yet.");
@@ -1133,13 +1120,13 @@ void FeaturesTick() {
         M.pogoNext = t + std::max(0.2f, M.pogoEvery);
         Bounce(true);
     }
+    if (M.crawlStopAt > 0 && t >= M.crawlStopAt) {
+        M.crawlStopAt = 0;
+        if (!F.crawl) StopEvent("", "crawl"), StopEvent("", "stand");
+    }
     if (M.tpose && M.tposeHoldAt > 0 && t >= M.tposeHoldAt) {
         M.tposeHoldAt = 0;
         StartEvent("", "tposehold", "AvatarPauseAnim", {{"duration", "100000", ""}});
-    }
-    if (M.neck && t >= M.neckNext) {
-        M.neckNext = t + 0.25;
-        Neck(true);
     }
 }
 
@@ -1147,6 +1134,7 @@ void FeaturesTab() {
     bool inWorld = GameObject() != 0;
     if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world to use these.");
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
+    Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Transform", "Outfits", "Emotes", "Camera", "World", "Shout"};
     if (ImGui::BeginTabBar("##sub")) {
         for (int i = 0; i < 7; i++)

@@ -276,6 +276,15 @@ void InstallFrameHook() {
 }
 }  // namespace
 
+std::string LuaStatus() {
+    std::lock_guard<std::mutex> lk(gJobMutex);
+    char b[160];
+    if (gHook == 1) snprintf(b, sizeof b, "Lua: game main thread, %zu waiting", gJobs.size());
+    else if (gHook == -1) snprintf(b, sizeof b, "Lua: direct (frame hook not placed; see Log)");
+    else snprintf(b, sizeof b, "Lua: not used yet");
+    return b;
+}
+
 int RunLua(const std::string& script, const std::string& what) {
     if (gHook == 0) InstallFrameHook();
     if (gHook != 1) return RunLuaHere(script);

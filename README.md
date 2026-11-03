@@ -44,10 +44,11 @@ The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 | Speed up / down | slider (0.1–6×) | `SetAvatarRunSpeedMult` |
 | Auto walk | toggle, speed and direction sliders | `SetAvatarVelocity` (x/z held while on) |
 | Pogo stick | power slider, Bounce, keep bouncing + interval | `SetAvatarMinYSpeed` (take off) |
-| Scatter, Crawl, Force flight, Walk under water, Kill avatar | toggles | `AvatarBreakHandHold` (every 0.5 s), `AvatarCrawl`, `AvatarForceEnableFlightMode`, `WalkUnderWater`, `KillLocalAvatar` |
+| Crawl mode | toggle | `AvatarCrawl` 1; off: `AvatarCrawl` 0 and `AvatarSetStance` stand (stopping the event alone leaves you crawling) |
+| Scatter, Force flight, Walk under water, Kill avatar | toggles | `AvatarBreakHandHold` (every 0.5 s), `AvatarForceEnableFlightMode`, `WalkUnderWater`, `KillLocalAvatar` |
 | Stop all animations | toggle | `AvatarPauseAnim` |
 | T-pose | toggle; any animation name with Play / Stop | `PlayAvatarAnimSeq` (`AirplaneArmsEmote_1`), then `AvatarPauseAnim`; `StopAvatarAnimSeq` |
-| Neck turn (experimental) | toggle, sideways and up/down sliders | `AvatarLookAt` at a marker placed from `GetCameraTransform` |
+| Neck turn (experimental) | toggle (the head follows the camera) | `AvatarLookAt` at a marker kept at the camera by `GetCameraTransform`. No sliders: reading a marker's position from Lua (`marker:pos()`) crashes the game |
 | Follow | *Look for access* (writes the game's Lua API to `offsetlab_lua_api.txt`) | not available yet: no event follows another player, and their positions aren't read yet |
 | Transform avatar | scrolling buttons (forms; *Other spells too*), duration slider, any spell id, *Back to normal* | `GrantSpell` (not networked), `RemoveSpell` |
 | Winged light, temporary | toggle + slider + typing | `AvatarOverrideCapeLevel` (reverts when stopped) |
