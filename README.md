@@ -70,7 +70,7 @@ The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 | Winged light, temporary | toggle + slider + typing | `AvatarOverrideCapeLevel` (reverts when stopped) |
 | Winged light, permanent (experimental) | Collect / Deposit / Convert / Drop, behind a server switch that's off at every start | the game's own `…WingBuff…ServerRequestEvent`s; the server decides |
 | Change outfits | categories with the game's icons, scrolling list with icons and names, search, *NPC outfits too*, *Back to my outfit* | the game's `Data/Resources/OutfitDefs.json` (read through Canvas), `AvatarSetOutfit` |
-| Edit outfits | height and size sliders | TheVoid's avatar height/scale values (`0x313970C`, `0x3139710`; `0x31396FC`/`0x3139700` in 0.35.1) |
+| Edit outfits | height and size sliders; a button per slot (body, cape, hair, hat, mask, face, neck, horn, feet, prop) that opens the game's outfit editor to move, rotate and resize that piece | TheVoid's avatar height/scale values (`0x313970C`, `0x3139710`; `0x31396FC`/`0x3139700` in 0.35.1); the game's Lua functions `DebugBodyDef(game)`, `DebugWingDef(game)`… (the editor TSM's Outfit Debug Menu opens) |
 | Emotes | level, speed, loop and mirror; scrolling list with icons; Stop | `Data/Resources/CollectibleDefs.json`, `AvatarPlayEmote` |
 | Camera | shake (speed, force, time); colour filters with strength and invert; random tint, surreal blue, caustics, sketch, hide cinematic bars; rain on screen (amount, size, density); slow motion; photo flash; lens presets; manual camera (experimental) | `SetCameraShake`, `CameraDesaturationEffect`, `CameraRandomTint`, `CameraSurrealBlueEffect`, `CameraCausticsEffect`, `CameraArtBookEffects`, `DisableCinematicBar`, `CameraScreenRainDropEffect`, `SetBulletTime`, `CameraPhotoFlash`, `LevelCameraDefaults`, `ManualControlCamera` |
 | No collision (experimental) | toggle | the call that fills the collision list (`0x296CAD0`, `bl 0x296FCC0`) replaced by a NOP; its count is zeroed just before, so nothing is found to collide with. Off restores the call |
@@ -80,7 +80,7 @@ The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 | Surface friction | slider | the game's "slippery ground" switch (byte at `0x34AFCEC`) and the value it loads (instructions at `0x249E524`, normally 0.2), patched to the slider's value; Reset restores both |
 | Shout | colour, intensity, voice type, Shout button, repeat + rate | `AvatarDoShout`, `AvatarSetVoice` (temporary) |
 
-Not yet: shout pitch (0.35.2 has no setting for it), moving single outfit pieces, first-person view and unlimited zoom
+Not yet: shout pitch (0.35.2 has no setting for it), first-person view and unlimited zoom
 (camera code changes not checked for 0.35.2 yet), Follow.
 
 Icons and the outfit/emote lists come from Canvas's own API (`IconLoader::getUIIcon`, `Cipher::read_asset`,

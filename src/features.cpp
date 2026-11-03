@@ -916,8 +916,26 @@ void OutfitsSection() {
                             "-3..3). Reset = 0.");
     if (Slider("height", &M.height, -3.f, 3.f, 0.f, "height %.2f")) SetFloatVar("Avatar height", kAvatarHeight, M.height);
     if (Slider("size", &M.size, -3.f, 3.f, 0.f, "size %.2f")) SetFloatVar("Avatar size", kAvatarScale, M.size);
-    Dim("Moving single outfit pieces off their places: the game only offers that in its developer outfit editor, "
-        "which isn't reachable yet.");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Move and resize pieces (the game's outfit editor)");
+    Dim("Opens the game's own developer editor for one outfit slot (its Lua functions DebugBodyDef(game), "
+        "DebugHairDef(game)...; the same editor TSM's Outfit Debug Menu opens). Move, rotate and resize the piece "
+        "there. Local to your game.");
+    static const char* kEditors[][2] = {{"Body", "DebugBodyDef"}, {"Cape", "DebugWingDef"}, {"Hair", "DebugHairDef"},
+                                        {"Hat", "DebugHatDef"},   {"Mask", "DebugMaskDef"}, {"Face", "DebugFaceDef"},
+                                        {"Neck", "DebugNeckDef"}, {"Horn", "DebugHornDef"}, {"Feet", "DebugFeetDef"},
+                                        {"Prop", "DebugPropDef"}};
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
+    for (int i = 0; i < 10; i++) {
+        if (i % 5) ImGui::SameLine();
+        if (ImGui::Button(kEditors[i][0], ImVec2(bw, Dp(44)))) {
+            std::string fn = kEditors[i][1];
+            Run(std::string("Outfit editor: ") + kEditors[i][0],
+                "if type(" + fn + ") ~= \"function\" then error(\"" + fn + " isn't in this game build\") end\n" + fn +
+                    "(game)\n");
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s(game)", kEditors[i][1]);
+    }
 }
 
 void EmotesSection() {
