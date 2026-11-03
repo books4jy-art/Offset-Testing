@@ -31,27 +31,32 @@ const ImVec4 kAmber300(0.988f, 0.827f, 0.302f, 1.f);
 inline ImVec4 White(float a) { return ImVec4(1.f, 1.f, 1.f, a); }
 inline ImVec4 Sky(float a) { return ImVec4(kSky400.x, kSky400.y, kSky400.z, a); }
 
-// k: how much bigger than the layout's base sizes (1 = the sizes below, made for text at 1.35x)
-void ApplyTheme(float k, float screenK) {
+// Sizes follow TSM's layout, in dp: dp = 1.6667 px x the panel scale (TSM's auto-scale: the 430x545 dp layout fitted
+// into 75% x 80% of the screen, at most 1). Rows at least 36 dp high, 44 dp sub-tab buttons, 20 px scrollbar.
+float gDp = 1.6667f;   // px per dp right now
+float gTextPx = 24.f;  // text height in px right now
+float DP(float v) { return v * gDp; }
+
+void ApplyTheme() {
     ImGuiStyle& s = ImGui::GetStyle();
-    s.WindowRounding = 10.f * k;
-    s.ChildRounding = 8.f * k;
-    s.FrameRounding = 6.f * k;
-    s.PopupRounding = 8.f * k;
-    s.GrabRounding = 6.f * k;
-    s.TabRounding = 6.f * k;
-    s.ScrollbarRounding = 12.f * k;
+    s.WindowRounding = 0.f;  // TSM's panel: square, docked to the edge
+    s.ChildRounding = DP(12);
+    s.FrameRounding = DP(6);
+    s.PopupRounding = DP(8);
+    s.GrabRounding = DP(6);
+    s.TabRounding = DP(6);
+    s.ScrollbarRounding = DP(6);
     s.WindowBorderSize = 1.f;
     s.ChildBorderSize = 1.f;
     s.FrameBorderSize = 1.f;
-    s.ItemSpacing = ImVec2(10.f * k, 10.f * k);
-    s.ItemInnerSpacing = ImVec2(8.f * k, 6.f * k);
-    s.FramePadding = ImVec2(14.f * k, 10.f * k);
-    s.WindowPadding = ImVec2(16.f * k, 16.f * k);
-    s.TouchExtraPadding = ImVec2(4.f * k, 4.f * k);
-    // like TSM's (20-40 px on a 1080-pixel-high screen), growing with the screen
-    s.ScrollbarSize = std::max(20.f, std::min(40.f, 34.f * screenK) * std::max(1.f, screenK));
-    s.GrabMinSize = std::max(s.ScrollbarSize, 22.f * k);
+    s.ItemSpacing = ImVec2(DP(8), DP(8));
+    s.ItemInnerSpacing = ImVec2(DP(8), DP(6));
+    s.IndentSpacing = DP(14);
+    s.FramePadding = ImVec2(DP(12), std::max(DP(6), (DP(36) - gTextPx) * 0.5f));  // 36 dp rows
+    s.WindowPadding = ImVec2(DP(12), DP(12));
+    s.TouchExtraPadding = ImVec2(DP(2), DP(2));
+    s.ScrollbarSize = std::max(20.f, std::min(40.f, 20.f * gDp / 1.6667f));  // TSM: 20 px (20-40)
+    s.GrabMinSize = DP(20);
     ImVec4* c = s.Colors;
     const ImVec4 bg(0.043f, 0.051f, 0.071f, 1.00f);  // #0b0d12, solid so the game doesn't show through
     c[ImGuiCol_WindowBg] = bg;
@@ -230,7 +235,7 @@ struct State {
     // view & crash notes (saved next to the mod)
     bool prefsLoaded = false;
     float uiScale = 1.0f;     // the panel's size on top of the screen's (Size slider)
-    float panelWidth = 0.62f; // part of the screen's width the panel takes
+    float panelWidthDp = 500.f; // TSM's default panel width
     bool menuOpen = true;
     std::string lastFired;       // from the previous session: last function fired before the game closed
     bool lastFiredShown = false;
@@ -245,7 +250,7 @@ bool IsCrashed(const std::string& name) {
 }
 
 void SavePrefs() {
-    std::string t = "uiScale=" + std::to_string(S.uiScale) + "\npanelWidth=" + std::to_string(S.panelWidth) +
+    std::string t = "uiScale=" + std::to_string(S.uiScale) + "\npanelWidthDp=" + std::to_string(S.panelWidthDp) +
                     "\nmenuOpen=" + std::string(S.menuOpen ? "1" : "0") + "\n";
     for (auto& c : S.crashed) t += "crashed=" + c + "\n";
     WriteTextFile(DataPath("offsetlab_settings.txt"), t);
@@ -260,8 +265,8 @@ void LoadPrefs() {
         size_t b = t.find('\n', a);
         if (b == std::string::npos) b = t.size();
         std::string line = t.substr(a, b - a);
-        if (line.rfind("uiScale=", 0) == 0) S.uiScale = std::max(0.6f, std::min(2.0f, strtof(line.c_str() + 8, nullptr)));
-        if (line.rfind("panelWidth=", 0) == 0) S.panelWidth = std::max(0.35f, std::min(1.0f, strtof(line.c_str() + 11, nullptr)));
+        if (line.rfind("uiScale=", 0) == 0) S.uiScale = std::max(0.7f, std::min(1.5f, strtof(line.c_str() + 8, nullptr)));
+        if (line.rfind("panelWidthDp=", 0) == 0) S.panelWidthDp = std::max(360.f, std::min(720.f, strtof(line.c_str() + 13, nullptr)));
         if (line.rfind("menuOpen=", 0) == 0) S.menuOpen = line[9] == '1';
         if (line.rfind("crashed=", 0) == 0) S.crashed.push_back(line.substr(8));
         a = b + 1;
@@ -516,7 +521,8 @@ std::string FireScript(int i) {
         const LabSetting& st = Setting(t.settingFirst + k);
         s += "e:" + GameString(st.nameAddr) + "(" + LuaValue(st, vals[k]) + ")\n";
     }
-    s += "__offsetLab = __offsetLab or {}\n__offsetLab[" + Quote(S.names[i]) + "] = e\n";
+    s += "__offsetLab = __offsetLab or {}\n__offsetLab[" + Quote(S.names[i]) + "] = e\n"
+         "__offsetLabLevel = __offsetLabLevel or {}\n__offsetLabLevel[" + Quote(S.names[i]) + "] = game:levelName()\n";
     return s + "e:Start()\n";
 }
 
@@ -551,7 +557,11 @@ void Fire(int i) {
 
 void Stop(int i) {
     std::string n = Quote(S.names[i]);
+    // only in the level it was fired in: the game deletes events on a level change, and touching a deleted one
+    // crashes it. Events that finish by themselves are deleted too: Stop those only while they're still going.
     int rc = RunLua("local e = __offsetLab and __offsetLab[" + n + "]\nif e == nil then error(\"not fired\") end\n"
+                    "if (__offsetLabLevel or {})[" + n + "] ~= game:levelName() then __offsetLab[" + n +
+                    "] = nil; error(\"fired in another level\") end\n"
                     "e:SetEnabled(false)\n__offsetLab[" + n + "] = nil\n",
                     "Stop " + S.names[i]);
     S.lastOk = rc == 0;
@@ -1051,8 +1061,10 @@ void LogTab() {
 
 void OpenMemoryAt(uint32_t offset) { OpenMemory(offset); }
 
-float gK = 1.f;  // current layout scale, for Px()
-float Px(float v) { return v * gK; }
+float Dp(float v) { return DP(v); }
+
+// Px: sizes written for the old layout (text 17.5 px high); scaled to the current text size.
+float Px(float v) { return v * gTextPx / 17.5f; }
 
 // Drag the content to scroll (touch): a vertical drag that starts on a button scrolls instead of pressing it.
 void TouchScroll() {
@@ -1075,34 +1087,42 @@ void Draw(bool* open) {
     FeaturesTick();  // repeating features keep going while the panel is collapsed
     ImGuiStyle saved = ImGui::GetStyle();  // the theme is only for Offset Lab's windows, not Canvas's
     ImGuiIO& io = ImGui::GetIO();
-    float screenK = std::max(0.5f, std::min(io.DisplaySize.x, io.DisplaySize.y) / 1080.f);
-    float fontScale = 2.0f * screenK * S.uiScale;
-    gK = fontScale / 1.35f;
-    ApplyTheme(gK, screenK);
-    float margin = io.DisplaySize.x * 0.045f;  // clear of the notch and rounded corners
+    // TSM's auto-scale
+    const float density = 1.6667f;
+    float fitW = (io.DisplaySize.x * 0.75f) / (430.f * density), fitH = (io.DisplaySize.y * 0.80f) / (545.f * density);
+    float uiScale = std::max(0.6f, std::min(1.0f, std::min(fitW, fitH)));
+    gDp = density * uiScale * S.uiScale;
+    gTextPx = DP(15);  // body text 15 dp high
+    // window font scale so text is gTextPx high, whatever font size Canvas loaded
+    float fontScale = gTextPx / std::max(1.f, ImGui::GetFont()->FontSize * io.FontGlobalScale);
+    ApplyTheme();
+    const float margin = DP(12);
 
-    // the menu button: opens and collapses the panel
-    ImGui::SetNextWindowPos(ImVec2(margin, Px(8)), ImGuiCond_Always);
+    // the collapse button, top-right corner
+    const float handle = DP(44);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin - DP(120), margin), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(DP(120), handle), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("##offsetlab_menu", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
-                     ImGuiWindowFlags_NoSavedSettings);
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoBackground);
     ImGui::SetWindowFontScale(fontScale);
-    if (AccentButton(S.menuOpen ? "Offset Lab  [-]" : "Offset Lab  [+]")) {
+    if (AccentButton(S.menuOpen ? "Lab  >" : "<  Lab", ImVec2(DP(120), handle))) {
         S.menuOpen = !S.menuOpen;
         SavePrefs();
     }
-    float top = ImGui::GetWindowPos().y + ImGui::GetWindowSize().y + Px(6);
     ImGui::End();
+    ImGui::PopStyleVar();
     if (!S.menuOpen) {
         ImGui::GetStyle() = saved;
         return;
     }
 
-    // the panel, docked on the left under the button
-    ImGui::SetNextWindowPos(ImVec2(margin, top), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2((io.DisplaySize.x - 2 * margin) * S.panelWidth, io.DisplaySize.y - top - Px(8)),
-                             ImGuiCond_Always);
+    // the panel: docked on the right under the button, TSM's width (500 dp; Width slider 360-720 dp)
+    float top = margin + handle + DP(6);
+    float w = std::min(DP(S.panelWidthDp), io.DisplaySize.x - 2 * margin);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin - w, top), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(w, io.DisplaySize.y - top - margin), ImGuiCond_Always);
     ImGui::Begin("##offsetlab_panel", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
@@ -1116,11 +1136,11 @@ void Draw(bool* open) {
     ImGui::SameLine();
     Dim("%s", game ? "· in the world, ready to fire" : "· enter the world to fire game functions");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.3f);
-    ImGui::SliderFloat("Size", &S.uiScale, 0.6f, 2.0f, "%.2f");
+    ImGui::SliderFloat("Size", &S.uiScale, 0.7f, 1.5f, "%.2f");
     if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
-    ImGui::SliderFloat("Width", &S.panelWidth, 0.35f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Width", &S.panelWidthDp, 360.f, 720.f, "%.0f dp");
     if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
     if (!S.lastFired.empty() && !S.lastFiredShown) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.05f, 0.6f));

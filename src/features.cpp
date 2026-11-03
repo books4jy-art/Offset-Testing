@@ -99,8 +99,12 @@ struct Set {
     std::string fallback;     // tried when value isn't accepted (enums: the option's number)
 };
 
+// Saved events are dropped when the level changes: the game deletes them, and using a deleted event's handle
+// crashes the game ("Invalid meta class id").
 const char* kPrelude =
     "OffsetLab = OffsetLab or {}\n"
+    "do local ok, lvl = pcall(function() return game:levelName() end)\n"
+    "  if ok and OffsetLab._level ~= lvl then OffsetLab = {_level = lvl} end end\n"
     "local function stop(k) local e = OffsetLab[k]; OffsetLab[k] = nil\n"
     "  if e then pcall(function() e:SetEnabled(false) end) end end\n";
 // Events have Start, SetEnabled and GetEnabled in the game's Lua (the EventBarn binding); there is no Stop, so a
@@ -197,13 +201,28 @@ std::vector<Set> GameDefaults(const char* type) {
     return out;
 }
 
-bool StartEvent(const std::string& what, const std::string& key, const char* type, const std::vector<Set>& given,
+// Events that do their thing and finish: the game deletes them by itself, so they're never kept or switched off
+// (switching off a deleted one crashed the game: a second Cat curse, a second outfit, Sunglasses off).
+bool OneShot(const char* type) {
+    static const char* const kOnce[] = {
+        "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
+        "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
+        "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
+        "SetCameraShake", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent"};
+    for (const char* t : kOnce)
+        if (!strcmp(t, type)) return true;
+    return false;
+}
+
+bool StartEvent(const std::string& what, const std::string& keyIn, const char* type, const std::vector<Set>& given,
                 bool allowUnlisted = false) {
     if (!SafeToFire(type, allowUnlisted)) return false;
+    const std::string key = OneShot(type) ? std::string() : keyIn;
     std::vector<Set> sets = GameDefaults(type);  // first the game's defaults, then ours
     sets.insert(sets.end(), given.begin(), given.end());
     std::string s = kPrelude;
-    s += "stop(\"" + key + "\")\n";
+    if (!key.empty()) s += "stop(\"" + key + "\")\n";
     s += "local e = game:eventBarn():AddEventByMetaName(\"" + std::string(type) + "\")\n";
     s += "if not e then error(\"" + std::string(type) + " not found\") end\n";
     s += "local bad = {}\n";
@@ -216,7 +235,8 @@ bool StartEvent(const std::string& what, const std::string& key, const char* typ
             s += "bad[#bad+1] = \"" + x.name + "\" ";
         s += "end\n";
     }
-    s += "e:Start()\nOffsetLab[\"" + key + "\"] = e\n";
+    s += "e:Start()\n";
+    if (!key.empty()) s += "OffsetLab[\"" + key + "\"] = e\n";
     s += "if #bad > 0 and print then pcall(print, \"Offset Lab: " + std::string(type) +
          " didn't take \" .. table.concat(bad, \", \")) end\n";
     return Run(what, s);
@@ -530,7 +550,8 @@ struct More {
     double crawlStopAt = 0;
     double pauseNext = 0;    // Stop all animations / T-pose: short pauses renewed while on
     bool tposeHold = false;
-    double gravityResetAt = 0;  // when to stop the "crawl 0" event after Crawl off
+    double gravityResetAt = 0;
+    double killNext = 0;  // when to stop the "crawl 0" event after Crawl off
     // outfits
     Json outfitDefs;
     bool outfitTried = false;
@@ -694,10 +715,8 @@ void PlayerSection(bool inWorld) {
         if (F.walkUnderWater) StartEvent("Walk under water on", "water", "WalkUnderWater", {});
         else StopEvent("Walk under water off", "water");
     }
-    if (Toggle("Kill avatar", &F.kill, "Your avatar dies (the game's own death), and keeps dying while on.")) {
-        if (F.kill) StartEvent("Kill avatar on", "kill", "KillLocalAvatar", {});
-        else StopEvent("Kill avatar off", "kill");
-    }
+    if (Toggle("Kill avatar", &F.kill, "Your avatar dies (the game's own death), again every 3 s while on."))
+        M.killNext = 0, Log("Kill avatar %s", F.kill ? "on" : "off");
 
     Section("ANIMATION", nullptr);
     if (Toggle("Stop all animations", &M.pause, "Freezes your avatar's animation (walking included) while on.")) {
@@ -911,7 +930,8 @@ void EmotesSection() {
     Slider("eloop", &M.emoteLoop, 0.f, 30.f, 0.f, M.emoteLoop == 0.f ? "loop: forever" : "loop %.1f s");
     ImGui::Checkbox("Mirror", &M.emoteMirror);
     ImGui::SameLine();
-    if (ImGui::Button("Stop emote")) StopEvent("Emote stopped", "emote");
+    if (ImGui::Button("Stop emote"))
+        StartEvent("Emote stopped", "", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
     if (!list) {
         Dim("The emote list couldn't be read from the game yet (enter the world and open this again).");
         if (ImGui::Button("Try again")) M.collectiblesTried = false;
@@ -958,8 +978,6 @@ void CameraSection() {
         StartEvent("Camera shake", "shake", "SetCameraShake",
                    {{"speed", Num(M.shakeSpeed), ""}, {"force", Num(M.shakeForce), ""}, {"duration", Num(M.shakeTime), ""},
                     {"fadeInDuration", "0.2", ""}, {"fadeOutDuration", "0.5", ""}});
-    ImGui::SameLine();
-    if (ImGui::Button("Stop shaking")) StopEvent("Camera shake stopped", "shake");
 
     Section("FILTERS & SHADES", nullptr);
     static const char* kFilters[] = {"kFilterType_Standard", "kFilterType_Red", "kFilterType_Orange",
@@ -1162,6 +1180,10 @@ void FeaturesTick() {
         M.gravityResetAt = 0;
         if (!F.antigravity) StopEvent("", "gravity");
     }
+    if (F.kill && t >= M.killNext) {
+        M.killNext = t + 3.0;
+        StartEvent("", "", "KillLocalAvatar", {});
+    }
     if (M.crawlStopAt > 0 && t >= M.crawlStopAt) {
         M.crawlStopAt = 0;
         if (!F.crawl) StopEvent("", "crawl"), StopEvent("", "stand");
@@ -1183,7 +1205,7 @@ void FeaturesTab() {
         if (i % 4) ImGui::SameLine();
         bool sel = gSub == i;
         if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
-        if (ImGui::Button(kSubs[i], ImVec2((ImGui::GetContentRegionAvail().x - Px(30)) / 4, 0)) && !sel) gSub = i;
+        if (ImGui::Button(kSubs[i], ImVec2((ImGui::GetContentRegionAvail().x - Px(30)) / 4, Dp(44))) && !sel) gSub = i;
         if (sel) ImGui::PopStyleColor();
     }
     ImGui::Separator();

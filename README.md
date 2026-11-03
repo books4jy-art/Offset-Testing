@@ -13,11 +13,16 @@ Download `libOffsetLab.so` from the [latest release](../../releases/latest) and 
 
 ## Window
 
-Offset Lab draws its own window (`selfManagedUI`): a **menu button** at the top-left opens and collapses a panel
-docked under it on the left. Everything scales with the screen (text twice the base size on a 1080-pixel-high
-screen); **Size** and **Width** at the top adjust it and are remembered. The scrollbar is TSM-sized (20–40 px on a
-1080-pixel screen), and lists scroll by dragging the content (a vertical drag that starts on a button scrolls
-instead of pressing it). Features that repeat keep running while the panel is collapsed.
+Offset Lab draws its own window (`selfManagedUI`), laid out like TSM's: a panel docked on the right (500 dp wide,
+360–720 with **Width**), opened and collapsed with the **Lab** button in the top-right corner. Sizes are TSM's, in dp
+(1.6667 px × TSM's auto-scale, which fits its 430×545 dp layout into 75% × 80% of the screen, at most 1): 12 dp
+margins, rows at least 36 dp high, 44 dp sub-tab buttons, text 15 dp high, a 20 px scrollbar. **Size** scales it all.
+Lists scroll by dragging the content (a vertical drag that starts on a button scrolls instead of pressing it).
+Features that repeat keep running while the panel is collapsed.
+
+**Handles.** Events that do their thing and finish (spells, outfits, shout, emotes, bounce, flash, shake, kill…) are
+deleted by the game by themselves, so they're never kept or switched off: switching off a deleted event crashed the
+game ("Invalid meta class id"). Kept events are dropped when the level changes, for the same reason.
 
 ## Tabs
 
@@ -54,7 +59,7 @@ The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 | Auto walk | toggle, speed and direction sliders | `SetAvatarVelocity` (x/z held while on) |
 | Pogo stick | power slider, Bounce, keep bouncing + interval | `SetAvatarMinYSpeed` (take off) |
 | Crawl mode | toggle | `AvatarCrawl` 1; off: `AvatarCrawl` 0 and `AvatarSetStance` stand (stopping the event alone leaves you crawling) |
-| Scatter, Force flight, Walk under water, Kill avatar | toggles | `AvatarBreakHandHold` (every 0.5 s), `AvatarForceEnableFlightMode`, `WalkUnderWater`, `KillLocalAvatar` |
+| Scatter, Force flight, Walk under water, Kill avatar (again every 3 s) | toggles | `AvatarBreakHandHold` (every 0.5 s), `AvatarForceEnableFlightMode`, `WalkUnderWater`, `KillLocalAvatar` |
 | Stop all animations | toggle | `AvatarPauseAnim` for 1 s, renewed every 0.5 s while on |
 | T-pose | toggle; any animation name with Play / Stop | `PlayAvatarAnimSeq` (`AirplaneArmsEmote_1`), then `AvatarPauseAnim`; `StopAvatarAnimSeq` |
 | Neck turn (experimental) | toggle (the head follows the camera) | `AvatarLookAt` at a marker kept at the camera by `GetCameraTransform`. No sliders: reading a marker's position from Lua (`marker:pos()`) crashes the game |
