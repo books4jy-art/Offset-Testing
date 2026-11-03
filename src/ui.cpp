@@ -42,21 +42,24 @@ void ApplyTheme() {
     s.WindowBorderSize = 1.f;
     s.ChildBorderSize = 1.f;
     s.FrameBorderSize = 1.f;
-    s.ItemSpacing = ImVec2(8.f, 6.f);
-    s.FramePadding = ImVec2(10.f, 6.f);
-    s.WindowPadding = ImVec2(12.f, 12.f);
+    s.ItemSpacing = ImVec2(10.f, 10.f);
+    s.ItemInnerSpacing = ImVec2(8.f, 6.f);
+    s.FramePadding = ImVec2(14.f, 10.f);
+    s.WindowPadding = ImVec2(16.f, 16.f);
+    s.ScrollbarSize = 22.f;
+    s.GrabMinSize = 22.f;
     ImVec4* c = s.Colors;
-    const ImVec4 bg(0.043f, 0.051f, 0.071f, 0.97f);  // #0b0d12
+    const ImVec4 bg(0.043f, 0.051f, 0.071f, 1.00f);  // #0b0d12, solid so the game doesn't show through
     c[ImGuiCol_WindowBg] = bg;
-    c[ImGuiCol_ChildBg] = White(0.02f);
+    c[ImGuiCol_ChildBg] = White(0.035f);
     c[ImGuiCol_PopupBg] = ImVec4(0.067f, 0.078f, 0.102f, 0.98f);
-    c[ImGuiCol_Text] = White(0.90f);
-    c[ImGuiCol_TextDisabled] = White(0.42f);
-    c[ImGuiCol_Border] = White(0.10f);
+    c[ImGuiCol_Text] = White(0.97f);
+    c[ImGuiCol_TextDisabled] = White(0.62f);
+    c[ImGuiCol_Border] = White(0.18f);
     c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg] = White(0.05f);
-    c[ImGuiCol_FrameBgHovered] = White(0.08f);
-    c[ImGuiCol_FrameBgActive] = Sky(0.18f);
+    c[ImGuiCol_FrameBg] = White(0.09f);
+    c[ImGuiCol_FrameBgHovered] = White(0.13f);
+    c[ImGuiCol_FrameBgActive] = Sky(0.25f);
     c[ImGuiCol_TitleBg] = bg;
     c[ImGuiCol_TitleBgActive] = ImVec4(0.067f, 0.082f, 0.114f, 1.f);
     c[ImGuiCol_TitleBgCollapsed] = bg;
@@ -68,21 +71,21 @@ void ApplyTheme() {
     c[ImGuiCol_CheckMark] = kSky400;
     c[ImGuiCol_SliderGrab] = kSky400;
     c[ImGuiCol_SliderGrabActive] = kSky300;
-    c[ImGuiCol_Button] = White(0.06f);
-    c[ImGuiCol_ButtonHovered] = Sky(0.25f);
-    c[ImGuiCol_ButtonActive] = Sky(0.45f);
-    c[ImGuiCol_Header] = Sky(0.16f);
-    c[ImGuiCol_HeaderHovered] = Sky(0.24f);
-    c[ImGuiCol_HeaderActive] = Sky(0.36f);
-    c[ImGuiCol_Separator] = White(0.10f);
+    c[ImGuiCol_Button] = White(0.11f);
+    c[ImGuiCol_ButtonHovered] = Sky(0.30f);
+    c[ImGuiCol_ButtonActive] = Sky(0.50f);
+    c[ImGuiCol_Header] = Sky(0.28f);
+    c[ImGuiCol_HeaderHovered] = Sky(0.34f);
+    c[ImGuiCol_HeaderActive] = Sky(0.45f);
+    c[ImGuiCol_Separator] = White(0.16f);
     c[ImGuiCol_SeparatorHovered] = Sky(0.40f);
     c[ImGuiCol_SeparatorActive] = kSky400;
     c[ImGuiCol_ResizeGrip] = White(0.08f);
     c[ImGuiCol_ResizeGripHovered] = Sky(0.40f);
     c[ImGuiCol_ResizeGripActive] = kSky400;
-    c[ImGuiCol_Tab] = White(0.04f);
-    c[ImGuiCol_TabHovered] = Sky(0.28f);
-    c[ImGuiCol_TabActive] = Sky(0.30f);
+    c[ImGuiCol_Tab] = White(0.08f);
+    c[ImGuiCol_TabHovered] = Sky(0.35f);
+    c[ImGuiCol_TabActive] = Sky(0.45f);
     c[ImGuiCol_TabUnfocused] = White(0.04f);
     c[ImGuiCol_TabUnfocusedActive] = Sky(0.18f);
     c[ImGuiCol_TableHeaderBg] = White(0.05f);
@@ -100,7 +103,7 @@ void Dim(const char* fmt, ...) IM_FMTARGS(1);
 void Dim(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    ImGui::PushStyleColor(ImGuiCol_Text, White(0.45f));
+    ImGui::PushStyleColor(ImGuiCol_Text, White(0.70f));
     ImGui::TextWrappedV(fmt, ap);
     ImGui::PopStyleColor();
     va_end(ap);
@@ -220,7 +223,42 @@ struct State {
     double lastSample = 0;
     int tab = 0;
     int openTab = -1;
+    // view & crash notes (saved next to the mod)
+    bool prefsLoaded = false;
+    float textScale = 1.35f;
+    std::string lastFired;       // from the previous session: last function fired before the game closed
+    bool lastFiredShown = false;
+    std::vector<std::string> crashed;  // functions marked as crashing the game
+    std::string pendingRisky;          // function waiting for "Fire anyway"
 } S;
+
+bool IsCrashed(const std::string& name) {
+    return std::find(S.crashed.begin(), S.crashed.end(), name) != S.crashed.end();
+}
+
+void SavePrefs() {
+    std::string t = "textScale=" + std::to_string(S.textScale) + "\n";
+    for (auto& c : S.crashed) t += "crashed=" + c + "\n";
+    WriteTextFile(DataPath("offsetlab_settings.txt"), t);
+}
+
+void LoadPrefs() {
+    if (S.prefsLoaded) return;
+    S.prefsLoaded = true;
+    std::string t = ReadTextFile(DataPath("offsetlab_settings.txt"));
+    size_t a = 0;
+    while (a < t.size()) {
+        size_t b = t.find('\n', a);
+        if (b == std::string::npos) b = t.size();
+        std::string line = t.substr(a, b - a);
+        if (line.rfind("textScale=", 0) == 0) S.textScale = std::max(0.8f, std::min(2.5f, strtof(line.c_str() + 10, nullptr)));
+        if (line.rfind("crashed=", 0) == 0) S.crashed.push_back(line.substr(8));
+        a = b + 1;
+    }
+    std::string last = ReadTextFile(DataPath("offsetlab_last_fired.txt"));
+    size_t nl = last.find('\n');
+    S.lastFired = last.substr(0, nl);
+}
 
 double Now() {
     using namespace std::chrono;
@@ -457,7 +495,11 @@ std::string FireScript(int i) {
 }
 
 void Fire(int i) {
-    int rc = RunLua(FireScript(i));
+    std::string script = FireScript(i);
+    // written before firing, so if the game crashes the log and the next start say what it was
+    Log("Firing %s:\n%s", S.names[i].c_str(), script.c_str());
+    WriteTextFile(DataPath("offsetlab_last_fired.txt"), S.names[i] + "\n");
+    int rc = RunLua(script);
     S.lastOk = rc == 0;
     S.lastResult = rc == 0 ? "Fired " + S.titles[i]
                  : rc == -1 ? "The game isn't ready yet (enter the world first)"
@@ -556,14 +598,47 @@ void Details(int i) {
         ImGui::TextColored(kAmber300, "Server type: turn on \"Server types\" at the top to fire it.");
         ImGui::BeginDisabled();
     }
-    if (AccentButton("Fire", ImVec2(140, 0))) Fire(i);
+    // object settings left empty are the usual cause of the game crashing a little after firing
+    std::vector<std::string> emptyObjects;
+    for (uint32_t k = 0; k < t.settingCount; k++) {
+        const LabSetting& st = Setting(t.settingFirst + k);
+        if (st.kind == kObject && vals[k].text.empty()) emptyObjects.push_back(Friendly(GameString(st.nameAddr)));
+    }
+    if (IsCrashed(S.names[i]))
+        ImGui::TextColored(kRed300, "You marked this as crashing the game.");
+    if (!emptyObjects.empty()) {
+        std::string list;
+        for (size_t k = 0; k < emptyObjects.size() && k < 4; k++) list += (k ? ", " : "") + emptyObjects[k];
+        if (emptyObjects.size() > 4) list += ", ...";
+        ImGui::TextColored(kAmber300, "Empty object settings (%s): the game may crash using them. Fill them in, or fire anyway.",
+                           list.c_str());
+    }
+    bool risky = !emptyObjects.empty() || IsCrashed(S.names[i]);
+    if (risky) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.25f, 0.25f, 1.f));
+        if (ImGui::Button("Fire anyway", ImVec2(200, 0))) Fire(i);
+        ImGui::PopStyleColor(2);
+    } else if (AccentButton("Fire", ImVec2(200, 0))) {
+        Fire(i);
+    }
     ImGui::SameLine();
-    if (ImGui::Button("Stop", ImVec2(100, 0))) Stop(i);
+    if (ImGui::Button("Stop", ImVec2(140, 0))) Stop(i);
     ImGui::SameLine();
     ImGui::Checkbox("Fire on change", &S.fireOnChange);
-    if (S.fireOnChange && anyChange) Fire(i);
+    if (S.fireOnChange && anyChange && !risky) Fire(i);
     if (blocked) ImGui::EndDisabled();
     if (ImGui::Button("Reset all")) S.values.erase(i);
+    ImGui::SameLine();
+    if (!IsCrashed(S.names[i])) {
+        if (ImGui::Button("Mark as crashing")) {
+            S.crashed.push_back(S.names[i]);
+            SavePrefs();
+        }
+    } else if (ImGui::Button("Unmark crashing")) {
+        S.crashed.erase(std::remove(S.crashed.begin(), S.crashed.end(), S.names[i]), S.crashed.end());
+        SavePrefs();
+    }
     ImGui::SameLine();
     if (ImGui::Button("Copy as Lua")) {
         snprintf(S.lua, sizeof S.lua, "%s", FireScript(i).c_str());
@@ -659,17 +734,18 @@ void GameFunctionsTab() {
     if (ImGui::BeginChild("##list", ImVec2(0, listH), ImGuiChildFlags_Border)) {
         float lineH = ImGui::GetTextLineHeight();
         ImGuiListClipper clip;
-        clip.Begin((int)rows.size(), lineH * 2 + ImGui::GetStyle().ItemSpacing.y + 4);
+        clip.Begin((int)rows.size(), lineH * 2 + ImGui::GetStyle().ItemSpacing.y + 12);
         while (clip.Step())
             for (int r = clip.DisplayStart; r < clip.DisplayEnd; r++) {
                 int i = rows[r];
                 ImGui::PushID(i);
                 ImVec2 p = ImGui::GetCursorScreenPos();
-                if (ImGui::Selectable("##row", S.selected == i, 0, ImVec2(0, lineH * 2 + 4))) Select(i);
+                if (ImGui::Selectable("##row", S.selected == i, 0, ImVec2(0, lineH * 2 + 12))) Select(i);
                 ImDrawList* dl = ImGui::GetWindowDrawList();
-                dl->AddText(ImVec2(p.x + 4, p.y + 2), ImGui::GetColorU32(White(0.92f)), S.titles[i].c_str());
-                std::string sub = S.names[i] + "  ·  " + kAreaNames[t[i].area];
-                dl->AddText(ImVec2(p.x + 4, p.y + 2 + lineH), ImGui::GetColorU32(t[i].area == kAreaServer ? kAmber300 : White(0.38f)),
+                bool crashed = IsCrashed(S.names[i]);
+                dl->AddText(ImVec2(p.x + 8, p.y + 5), ImGui::GetColorU32(crashed ? kRed300 : White(0.97f)), S.titles[i].c_str());
+                std::string sub = S.names[i] + "  ·  " + kAreaNames[t[i].area] + (crashed ? "  ·  crashed before" : "");
+                dl->AddText(ImVec2(p.x + 8, p.y + 5 + lineH), ImGui::GetColorU32(crashed ? kRed300 : t[i].area == kAreaServer ? kAmber300 : White(0.62f)),
                             sub.c_str());
                 ImGui::PopID();
             }
@@ -852,8 +928,10 @@ void LogTab() {
 
 void Draw(bool* open) {
     (void)open;
+    LoadPrefs();
     ApplyTheme();
-    ImGui::SetWindowSize(ImVec2(900, 1100), ImGuiCond_FirstUseEver);
+    ImGui::SetWindowSize(ImVec2(1000, 1300), ImGuiCond_FirstUseEver);
+    ImGui::SetWindowFontScale(S.textScale);
 
     Eyebrow("SKY MESH LAB");
     ImGui::SameLine();
@@ -862,6 +940,25 @@ void Draw(bool* open) {
     ImGui::TextColored(base ? kSky300 : kRed300, "%s", base ? "Game library loaded" : "Game library not found");
     ImGui::SameLine();
     Dim("%s", game ? "· in the world, ready to fire" : "· enter the world to fire game functions");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+    if (ImGui::SliderFloat("Text size", &S.textScale, 0.8f, 2.5f, "%.2f")) S.textScale = std::max(0.8f, S.textScale);
+    if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
+    if (!S.lastFired.empty() && !S.lastFiredShown) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.05f, 0.6f));
+        if (ImGui::BeginChild("##lastfired", ImVec2(0, 0), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY)) {
+            ImGui::TextColored(kAmber300, "Last session, the last game function fired was %s.", S.lastFired.c_str());
+            Dim("If the game crashed then, this is the likely cause.");
+            if (ImGui::Button("Mark it as crashing")) {
+                if (!IsCrashed(S.lastFired)) S.crashed.push_back(S.lastFired);
+                SavePrefs();
+                S.lastFiredShown = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Dismiss")) S.lastFiredShown = true;
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
     ImGui::Separator();
 
     static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log"};

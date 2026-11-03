@@ -65,6 +65,11 @@ bool StartWatch(uintptr_t offset, const std::string& label, std::string& error);
 void StopWatch(uintptr_t offset);
 std::vector<Watch> Watches();
 
+// ---- small files next to the mod (Canvas's files folder) ----
+std::string DataPath(const char* name);        // "" if the folder can't be found
+std::string ReadTextFile(const std::string& path);
+bool WriteTextFile(const std::string& path, const std::string& text);
+
 // ---- log ----
 void Log(const char* fmt, ...);
 std::vector<std::string> LogLines();

@@ -142,6 +142,48 @@ int RunLua(const std::string& script) {
     return reinterpret_cast<RunFn>(base + addr::kRunLua)(reinterpret_cast<void*>(L), script.c_str());
 }
 
+// ---------------------------------------------------------------- files next to the mod
+
+std::string DataPath(const char* name) {
+    // the mod lives in <files>/mods/libOffsetLab.so; keep its files in <files>
+    static std::string dir;
+    if (dir.empty()) {
+        Dl_info info{};
+        if (dladdr(reinterpret_cast<void*>(&DataPath), &info) && info.dli_fname) {
+            std::string p = info.dli_fname;
+            size_t slash = p.rfind('/');
+            if (slash != std::string::npos) p.resize(slash);           // .../files/mods
+            size_t up = p.rfind('/');
+            if (up != std::string::npos && p.substr(up + 1) == "mods") p.resize(up);  // .../files
+            dir = p;
+        }
+    }
+    return dir.empty() ? std::string() : dir + "/" + name;
+}
+
+std::string ReadTextFile(const std::string& path) {
+    std::string out;
+    if (path.empty()) return out;
+    if (FILE* f = fopen(path.c_str(), "r")) {
+        char buf[1024];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
+        fclose(f);
+    }
+    return out;
+}
+
+bool WriteTextFile(const std::string& path, const std::string& text) {
+    if (path.empty()) return false;
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return false;
+    fwrite(text.data(), 1, text.size(), f);
+    fflush(f);
+    fsync(fileno(f));  // so it survives the game crashing right after
+    fclose(f);
+    return true;
+}
+
 // ---------------------------------------------------------------- log
 
 static std::mutex gLogMutex;
