@@ -4,6 +4,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <link.h>
+#include <sys/mman.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -14,6 +15,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <vector>
 
 namespace lab {
 
@@ -90,15 +92,22 @@ constexpr uintptr_t kRunLua = 0x29ADFA4;       // int (lua_State*, const char* s
 // ---------------------------------------------------------------- base & memory
 
 static uintptr_t gImageEnd = 0;  // end of libBootloader.so's loaded image
+struct Segment { uintptr_t start, end; uint32_t flags; };
+static std::vector<Segment> gSegments;  // loaded segments (PF_R/PF_W/PF_X)
+static uintptr_t gRelroStart = 0, gRelroEnd = 0;  // read-only after loading
 
 static int FindBase(dl_phdr_info* info, size_t, void* data) {
     if (info->dlpi_name && strstr(info->dlpi_name, "libBootloader.so")) {
         *static_cast<uintptr_t*>(data) = info->dlpi_addr;
-        for (int i = 0; i < info->dlpi_phnum; i++)
-            if (info->dlpi_phdr[i].p_type == PT_LOAD) {
-                uintptr_t end = info->dlpi_addr + info->dlpi_phdr[i].p_vaddr + info->dlpi_phdr[i].p_memsz;
+        for (int i = 0; i < info->dlpi_phnum; i++) {
+            const auto& ph = info->dlpi_phdr[i];
+            uintptr_t start = info->dlpi_addr + ph.p_vaddr, end = start + ph.p_memsz;
+            if (ph.p_type == PT_LOAD) {
                 if (end > gImageEnd) gImageEnd = end;
+                gSegments.push_back({start, end, ph.p_flags});
             }
+            if (ph.p_type == PT_GNU_RELRO) { gRelroStart = start; gRelroEnd = end; }
+        }
         return 1;
     }
     return 0;
@@ -141,6 +150,35 @@ bool ReadMemory(uintptr_t a, void* out, size_t len) {
             return true;
         }
     }
+    return false;
+}
+
+bool WriteGameMemory(uint32_t offset, const void* data, size_t len) {
+    uintptr_t base = GameBase();
+    if (!base || !len) return false;
+    uintptr_t a = base + offset;
+    for (const auto& seg : gSegments) {
+        if (a < seg.start || a + len > seg.end) continue;
+        if (seg.flags & PF_X) {
+            // game code: make the page(s) writable for the moment, write, put the protection back
+            uintptr_t page = a & ~uintptr_t(4095), pend = (a + len + 4095) & ~uintptr_t(4095);
+            if (mprotect(reinterpret_cast<void*>(page), pend - page, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+                Log("Write 0x%x: the game code can't be made writable (errno %d)", offset, errno);
+                return false;
+            }
+            memcpy(reinterpret_cast<void*>(a), data, len);
+            mprotect(reinterpret_cast<void*>(page), pend - page, PROT_READ | PROT_EXEC);
+            __builtin___clear_cache(reinterpret_cast<char*>(a), reinterpret_cast<char*>(a + len));
+            return true;
+        }
+        if ((seg.flags & PF_W) && !(a < gRelroEnd && a + len > gRelroStart)) {
+            memcpy(reinterpret_cast<void*>(a), data, len);  // the game's own variables (.data / .bss)
+            return true;
+        }
+        Log("Write 0x%x: not a writable part of the game", offset);
+        return false;
+    }
+    Log("Write 0x%x: outside the game library", offset);
     return false;
 }
 

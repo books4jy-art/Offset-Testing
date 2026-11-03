@@ -1032,6 +1032,8 @@ void LogTab() {
 
 }  // namespace
 
+void OpenMemoryAt(uint32_t offset) { OpenMemory(offset); }
+
 void Draw(bool* open) {
     (void)open;
     LoadPrefs();
@@ -1067,9 +1069,10 @@ void Draw(bool* open) {
     }
     ImGui::Separator();
 
-    static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log"};
+    static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets"};
+    static const int kOrder[] = {5, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
     if (ImGui::BeginTabBar("##tabs")) {
-        for (int i = 0; i < 5; i++) {
+        for (int i : kOrder) {
             ImGuiTabItemFlags f = (S.openTab == i) ? ImGuiTabItemFlags_SetSelected : 0;
             if (ImGui::BeginTabItem(kTabs[i], nullptr, f)) {
                 S.tab = i;
@@ -1079,6 +1082,8 @@ void Draw(bool* open) {
                     case 2: MemoryTab(); break;
                     case 3: NativeTab(); break;
                     case 4: LogTab(); break;
+                    case 5: FeaturesTab(); break;
+                    case 6: OtherOffsetsTab(); break;
                 }
                 ImGui::EndTabItem();
             }

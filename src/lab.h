@@ -58,6 +58,9 @@ bool ReadMemory(uintptr_t addr, void* out, size_t len);  // never crashes: false
 std::string ReadString(uintptr_t addr, size_t max = 512);
 std::string GameString(uint32_t offset);     // string at libBootloader.so + offset
 uint32_t Fnv1a(const std::string& s);
+// Writes into libBootloader.so at an offset: the game's variables directly, game code by making the page writable
+// for the moment. False (and a log line) if the address isn't part of the game library.
+bool WriteGameMemory(uint32_t offset, const void* data, size_t len);
 uintptr_t GameObject();                      // the game's main object (0 when not in game)
 // Runs Lua in the game. Returns the game's result code (0 = ok); -1 when the game isn't ready.
 int RunLua(const std::string& script);
@@ -83,5 +86,8 @@ std::vector<std::string> LogLines();
 
 // ---- UI ----
 void Draw(bool* open);
+void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders, buttons)
+void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
+void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
 
 }  // namespace lab

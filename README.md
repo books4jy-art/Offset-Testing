@@ -15,11 +15,40 @@ Download `libOffsetLab.so` from the [latest release](../../releases/latest) and 
 
 | Tab | What it does |
 |---|---|
+| **Features** | Ready-made controls, laid out like TheVoid's menu (see below). |
 | **Game functions** | Every type the game registers by name (2,751). Only **events** (types that descend from the game's Event type) can be fired; asking the game to fire anything else makes it abort, so Fire is off for them and *Events only* is on by default. Each is shown with a readable title ("Avatar set inner glow") and the game's name under it. **What it does**: the game's own notes for it and the developers' description of each setting, where they wrote one. **Settings**: each gets the control that fits its type in the game (toggle, slider with typing, whole number, text, x/y/z, colour picker, a choice of the game's own options, or a Lua object), starting at the game's default; only changed settings are sent. Under each setting, **Accepts** says what it takes: the game's own valid range where it gives one (`Tool_MinMaxValues`, 87 settings; sliders and typing are held to it), otherwise its type and a suggested range. Object settings (markers, NPCs, Float nodes…) refuse numbers and text, since the game would use them as objects and crash. Where the game keeps no type for a setting, it's guessed from the name and labelled so. **Fire**, **Fire on change**, **Stop**, **Back / Forward / Recent**. Offsets are under *Offsets*. |
 | **Lua** | Run any Lua in the game. The result is the game's code (0 = no error). |
 | **Memory** | Read-only view of any offset in libBootloader.so (or an absolute address): hex, text and the value as integer, float, double or pointer, with *follow pointer*. Reads never crash: unreadable memory shows `??`. |
 | **Native** | The functions the game exports by name, read from its own symbol table. **Watch** counts calls per second and shows the last four arguments; *Watch any offset* takes a hex offset (it must be the start of a function). |
+| **Other offsets** | TheVoid 0.1.2's feature table (79 addresses: its names and Sky 0.35.1 addresses), ported to 0.35.2 by matching the game code that uses each one, with how each was ported and, where known, what it likely is. Kept for exploring: open any of them in Memory, or watch the code ones. |
 | **Log** | What the mod did. |
+
+### Features
+
+Each one starts one of the game's own events from Lua (kept as `OffsetLab[key]` in the game's Lua, so it can be
+stopped) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
+**Reset**, which puts the game's normal behaviour back. All local to your game.
+
+| Feature | Control | Uses (0.35.2) |
+|---|---|---|
+| Transform avatar | scrolling buttons (forms; *Other spells too* for the rest), duration slider, any spell id, *Back to normal* | `GrantSpell` (not networked), `RemoveSpell` |
+| Player hover | slider (rise speed) | `AvatarAntiGravity` (upward speed, gravity 0, take off) |
+| Antigravity | toggle | `SetAvatarGravityMult` 0 / 1 |
+| Speed up / down | slider (0.1–6×) | `SetAvatarRunSpeedMult` |
+| Scatter | toggle | `AvatarBreakHandHold` every 0.5 s |
+| Crawl mode | toggle | `AvatarCrawl` |
+| Force flight | toggle | `AvatarForceEnableFlightMode` |
+| Walk under water | toggle | `WalkUnderWater` |
+| Kill avatar | toggle | `KillLocalAvatar` |
+| Winged light (temporary) | toggle + slider + typing | `AvatarOverrideCapeLevel` (reverts when stopped) |
+| Disable terrain | toggle | the game's terrain switch, byte at `0x3169CEC` (TheVoid's `world.hide_terrain`, `0x3169CDC` in 0.35.1) |
+| Disable reset barrier | toggle (experimental) | `AvatarSetBoundaryPlane` with no plane |
+| Disable shadow | toggle | `AvatarDisableShadow` |
+| Surface friction | slider | the game's "slippery ground" switch (byte at `0x34AFCEC`) and the value it loads (instructions at `0x249E524`, normally 0.2), patched to the slider's value; Reset restores both |
+| Shout | colour, intensity, voice type, Shout button, repeat + rate | `AvatarDoShout`, `AvatarSetVoice` (temporary) |
+
+Not here: a **permanent** winged light change (that's your account on the game's servers, which this mod doesn't
+change) and a **shout pitch** (0.35.2 has no event or setting for it).
 
 **Server types** (account, purchases, inventory, friends, requests): fireable only after turning on
 *Server types*, which is off at every start, because they send requests to whatever server the game is connected to.
@@ -56,6 +85,10 @@ when `config/config.json`'s version is new.
 
 - [Dear ImGui](https://github.com/ocornut/imgui) (commit d3c3514a, as in Canvas), MIT: `third_party/imgui`
 - [Dobby](https://github.com/jmpews/Dobby), Apache-2.0: `third_party/dobby` (prebuilt arm64 static library)
+- TheVoid 0.1.2 by Soyu, Apache-2.0: used as a reference for which features to offer and how its menu is laid out,
+  and for its table of feature names and Sky 0.35.1 addresses (`src/generated/void_offsets.inc`, ported to 0.35.2).
+  No TheVoid code is copied. Licensed under the Apache License, Version 2.0
+  (https://www.apache.org/licenses/LICENSE-2.0).
 
 Sky: Children of the Light is © thatgamecompany. This mod isn't affiliated with thatgamecompany or Canvas. Use at
 your own risk.
