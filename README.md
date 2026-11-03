@@ -32,21 +32,22 @@ starts gets all its settings at the game's defaults first (objects such as `npc`
 don't get them, and AvatarDisableShadow crashed reading an uninitialised `npc`.
 
 Each one starts one of the game's own events from Lua (kept as `OffsetLab[key]` in the game's Lua, so it can be
-stopped) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
+switched off with `SetEnabled(false)`: events have only `Start`, `SetEnabled` and `GetEnabled` in the game's Lua, no
+`Stop`) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
 **Reset**, which puts the game's normal behaviour back. All local to your game.
 
 The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 
 | Feature | Control | Uses (0.35.2) |
 |---|---|---|
-| Player hover | slider (rise speed) | `AvatarAntiGravity` (upward speed, gravity 0, take off) |
+| Player hover | slider (height, 0–20) | `AvatarAntiGravity`: rise at 3/s for height/3 s, then upward speed 0 and gravity 0 to hold there; Reset switches it off and you land |
 | Antigravity | toggle | `SetAvatarGravityMult` 0 / 1 |
 | Speed up / down | slider (0.1–6×) | `SetAvatarRunSpeedMult` |
 | Auto walk | toggle, speed and direction sliders | `SetAvatarVelocity` (x/z held while on) |
 | Pogo stick | power slider, Bounce, keep bouncing + interval | `SetAvatarMinYSpeed` (take off) |
 | Crawl mode | toggle | `AvatarCrawl` 1; off: `AvatarCrawl` 0 and `AvatarSetStance` stand (stopping the event alone leaves you crawling) |
 | Scatter, Force flight, Walk under water, Kill avatar | toggles | `AvatarBreakHandHold` (every 0.5 s), `AvatarForceEnableFlightMode`, `WalkUnderWater`, `KillLocalAvatar` |
-| Stop all animations | toggle | `AvatarPauseAnim` |
+| Stop all animations | toggle | `AvatarPauseAnim` for 1 s, renewed every 0.5 s while on |
 | T-pose | toggle; any animation name with Play / Stop | `PlayAvatarAnimSeq` (`AirplaneArmsEmote_1`), then `AvatarPauseAnim`; `StopAvatarAnimSeq` |
 | Neck turn (experimental) | toggle (the head follows the camera) | `AvatarLookAt` at a marker kept at the camera by `GetCameraTransform`. No sliders: reading a marker's position from Lua (`marker:pos()`) crashes the game |
 | Follow | *Look for access* (writes the game's Lua API to `offsetlab_lua_api.txt`) | not available yet: no event follows another player, and their positions aren't read yet |

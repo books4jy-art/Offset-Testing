@@ -102,7 +102,9 @@ struct Set {
 const char* kPrelude =
     "OffsetLab = OffsetLab or {}\n"
     "local function stop(k) local e = OffsetLab[k]; OffsetLab[k] = nil\n"
-    "  if e then if not pcall(function() e:Stop() end) then pcall(function() e:Terminate() end) end end end\n";
+    "  if e then pcall(function() e:SetEnabled(false) end) end end\n";
+// Events have Start, SetEnabled and GetEnabled in the game's Lua (the EventBarn binding); there is no Stop, so a
+// feature is switched off with SetEnabled(false).
 
 bool Run(const std::string& what, const std::string& script) {
     // what == "" for repeats (Scatter, repeated Shout): only problems are logged
@@ -436,13 +438,25 @@ void ApplyVoice() {
                 {"fireOnce", "false", ""}});
 }
 
+// Hover: rise at kHoverRise per second for (height / kHoverRise) seconds, then hold there weightless (upward speed 0,
+// gravity 0). Reset switches it off and you land.
+constexpr float kHoverRise = 3.f;
+double gHoverHoldAt = 0;
+
 void Hover() {
+    gHoverHoldAt = 0;
     if (F.hover <= 0.f) {
         StopEvent("Hover off", "hover");
         return;
     }
-    StartEvent("Hover " + Num(F.hover), "hover", "AvatarAntiGravity",
-               {{"upwardSpeed", Num(F.hover), ""}, {"gravityMult", "0", ""}, {"forceTakeoff", "true", ""}});
+    StartEvent("Hover: rising " + Num(F.hover), "hover", "AvatarAntiGravity",
+               {{"upwardSpeed", Num(kHoverRise), ""}, {"gravityMult", "0", ""}, {"forceTakeoff", "true", ""}});
+    gHoverHoldAt = ImGui::GetTime() + F.hover / kHoverRise;
+}
+
+void HoverHold() {
+    StartEvent("Hover: holding", "hover", "AvatarAntiGravity",
+               {{"upwardSpeed", "0", ""}, {"gravityMult", "0", ""}, {"forceTakeoff", "false", ""}});
 }
 
 void SpellButton(const Spell& s) {
@@ -513,7 +527,10 @@ struct More {
     // follow (Lua probe)
     std::string probe;
     double probeAt = 0;
-    double crawlStopAt = 0;  // when to stop the "crawl 0" event after Crawl off
+    double crawlStopAt = 0;
+    double pauseNext = 0;    // Stop all animations / T-pose: short pauses renewed while on
+    bool tposeHold = false;
+    double gravityResetAt = 0;  // when to stop the "crawl 0" event after Crawl off
     // outfits
     Json outfitDefs;
     bool outfitTried = false;
@@ -629,13 +646,14 @@ void ProbeLua() {
 void PlayerSection(bool inWorld) {
     Section("MOVEMENT", nullptr);
     ImGui::TextUnformatted("Player hover");
-    Dim("Lifts you off the ground and holds you up. The value is how fast you rise; set it low to hover "
-        "gently, Reset to land.");
-    if (Slider("hover", &F.hover, 0.f, 10.f, 0.f, "%.2f")) Hover();
+    Dim("Rises this high from where you are, then holds you there. Reset to land.");
+    if (Slider("hover", &F.hover, 0.f, 20.f, 0.f, "%.1f m")) Hover();
 
-    if (Toggle("Antigravity", &F.antigravity, "No gravity for your avatar."))
+    if (Toggle("Antigravity", &F.antigravity, "No gravity for your avatar.")) {
         StartEvent(F.antigravity ? "Antigravity on" : "Antigravity off", "gravity", "SetAvatarGravityMult",
                    {{"gravityMult", F.antigravity ? "0" : "1", ""}});
+        if (!F.antigravity) M.gravityResetAt = ImGui::GetTime() + 1.0;  // normal gravity, then switch the event off
+    }
 
     ImGui::TextUnformatted("Speed up / down");
     Dim("Walking and running speed (1 = normal).");
@@ -683,7 +701,7 @@ void PlayerSection(bool inWorld) {
 
     Section("ANIMATION", nullptr);
     if (Toggle("Stop all animations", &M.pause, "Freezes your avatar's animation (walking included) while on.")) {
-        if (M.pause) StartEvent("Animations stopped", "pause", "AvatarPauseAnim", {{"duration", "100000", ""}});
+        if (M.pause) M.pauseNext = 0, Log("Animations stopped");  // the tick renews a 1 s pause while on
         else StopEvent("Animations back", "pause");
     }
     if (Toggle("T-pose", &M.tpose, "Arms out, held still (the game's arms-out animation, then frozen).")) {
@@ -693,6 +711,7 @@ void PlayerSection(bool inWorld) {
             M.tposeHoldAt = ImGui::GetTime() + 0.7;
         } else {
             M.tposeHoldAt = 0;
+            M.tposeHold = false;
             StopEvent("", "tposehold");
             StopEvent("T-pose off", "tpose");
             StartEvent("", "animstop", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
@@ -1120,13 +1139,25 @@ void FeaturesTick() {
         M.pogoNext = t + std::max(0.2f, M.pogoEvery);
         Bounce(true);
     }
+    if ((M.pause || M.tposeHold) && t >= M.pauseNext) {
+        M.pauseNext = t + 0.5;
+        StartEvent("", M.pause ? "pause" : "tposehold", "AvatarPauseAnim", {{"duration", "1.0", ""}});
+    }
+    if (gHoverHoldAt > 0 && t >= gHoverHoldAt) {
+        gHoverHoldAt = 0;
+        HoverHold();
+    }
+    if (M.gravityResetAt > 0 && t >= M.gravityResetAt) {
+        M.gravityResetAt = 0;
+        if (!F.antigravity) StopEvent("", "gravity");
+    }
     if (M.crawlStopAt > 0 && t >= M.crawlStopAt) {
         M.crawlStopAt = 0;
         if (!F.crawl) StopEvent("", "crawl"), StopEvent("", "stand");
     }
     if (M.tpose && M.tposeHoldAt > 0 && t >= M.tposeHoldAt) {
         M.tposeHoldAt = 0;
-        StartEvent("", "tposehold", "AvatarPauseAnim", {{"duration", "100000", ""}});
+        M.tposeHold = true;
     }
 }
 
@@ -1136,14 +1167,15 @@ void FeaturesTab() {
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Transform", "Outfits", "Emotes", "Camera", "World", "Shout"};
-    if (ImGui::BeginTabBar("##sub")) {
-        for (int i = 0; i < 7; i++)
-            if (ImGui::BeginTabItem(kSubs[i])) {
-                gSub = i;
-                ImGui::EndTabItem();
-            }
-        ImGui::EndTabBar();
+    // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone
+    for (int i = 0; i < 7; i++) {
+        if (i % 4) ImGui::SameLine();
+        bool sel = gSub == i;
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+        if (ImGui::Button(kSubs[i], ImVec2((ImGui::GetContentRegionAvail().x - 30) / 4, 0)) && !sel) gSub = i;
+        if (sel) ImGui::PopStyleColor();
     }
+    ImGui::Separator();
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
         switch (gSub) {
             case 0: PlayerSection(inWorld); break;

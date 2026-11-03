@@ -543,7 +543,7 @@ void Fire(int i) {
 void Stop(int i) {
     std::string n = Quote(S.names[i]);
     int rc = RunLua("local e = __offsetLab and __offsetLab[" + n + "]\nif e == nil then error(\"not fired\") end\n"
-                    "if not pcall(function() e:Stop() end) then e:Terminate() end\n__offsetLab[" + n + "] = nil\n",
+                    "e:SetEnabled(false)\n__offsetLab[" + n + "] = nil\n",
                     "Stop " + S.names[i]);
     S.lastOk = rc == 0;
     S.lastResult = rc == 0 ? "Stopped " + S.titles[i] : "Couldn't stop it (it wasn't fired, or it can't be stopped)";
