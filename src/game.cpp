@@ -63,15 +63,30 @@ uintptr_t GameBase() {
     return base;
 }
 
+// process_vm_readv as a direct system call. Not the libc function by name: Canvas's libciphered.so exports a
+// variable called process_vm_readv (its Cheat Engine server), and a mod's lookup can land on it and crash.
+static long RawProcessVmReadv(long pid, const iovec* local, long nlocal, const iovec* remote, long nremote) {
+    register long x0 __asm__("x0") = pid;
+    register long x1 __asm__("x1") = reinterpret_cast<long>(local);
+    register long x2 __asm__("x2") = nlocal;
+    register long x3 __asm__("x3") = reinterpret_cast<long>(remote);
+    register long x4 __asm__("x4") = nremote;
+    register long x5 __asm__("x5") = 0;
+    register long x8 __asm__("x8") = 270;  // __NR_process_vm_readv on arm64
+    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5), "r"(x8) : "memory", "cc");
+    return x0;  // bytes read, or -errno
+}
+
 bool ReadMemory(uintptr_t a, void* out, size_t len) {
     if (!a || !len)
         return false;
+    static const long pid = getpid();
     iovec local{out, len}, remote{reinterpret_cast<void*>(a), len};
-    ssize_t n = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
-    if (n == static_cast<ssize_t>(len))
+    long n = RawProcessVmReadv(pid, &local, 1, &remote, 1);
+    if (n == static_cast<long>(len))
         return true;
     // Where the system doesn't allow process_vm_readv, read directly, but only inside libBootloader.so's image
-    if (n < 0 && (errno == ENOSYS || errno == EPERM || errno == EACCES)) {
+    if (n == -ENOSYS || n == -EPERM || n == -EACCES) {
         uintptr_t base = GameBase();
         if (base && a >= base && a + len <= gImageEnd) {
             memcpy(out, reinterpret_cast<const void*>(a), len);

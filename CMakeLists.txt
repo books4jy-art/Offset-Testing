@@ -24,7 +24,8 @@ add_library(OffsetLab SHARED src/main.cpp src/game.cpp src/symbols.cpp src/ui.cp
 set_target_properties(OffsetLab PROPERTIES OUTPUT_NAME OffsetLab)
 target_include_directories(OffsetLab PRIVATE src ${IMGUI_DIR} third_party/dobby)
 target_compile_options(OffsetLab PRIVATE -O2 -fvisibility=hidden -Wall -Wno-unused-function)
-target_link_libraries(OffsetLab PRIVATE ciphered log
+# System libraries first, so names they define win over anything with the same name in Canvas's libciphered.so
+target_link_libraries(OffsetLab PRIVATE c m dl log ciphered
   -Wl,--whole-archive ${CMAKE_SOURCE_DIR}/third_party/dobby/arm64-v8a/libdobby.a -Wl,--no-whole-archive)
 target_link_options(OffsetLab PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -s)
 

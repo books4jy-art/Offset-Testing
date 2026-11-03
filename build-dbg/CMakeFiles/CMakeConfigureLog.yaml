@@ -1,0 +1,229 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineSystem.cmake:228 (message)"
+      - "CMakeLists.txt:3 (project)"
+    message: |
+      The target system is: Android - 1 - aarch64
+      The host system is: Linux - 6.18.44-fc-v230 - x86_64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:3 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ 
+      Build flags: -g;-DANDROID;-fdata-sections;-ffunction-sections;-funwind-tables;-fstack-protector-strong;-no-canonical-prefixes;-D_FORTIFY_SOURCE=2;-Wformat;-Werror=format-security
+      Id flags: -c;--target=aarch64-none-linux-android26 
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "CMakeCXXCompilerId.o"
+      
+      The CXX compiler identification is Clang, found in:
+        /home/user/offset-testing/build-dbg/CMakeFiles/3.28.3/CompilerIdCXX/CMakeCXXCompilerId.o
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerABI.cmake:57 (try_compile)"
+      - "/usr/share/cmake-3.28/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:3 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/home/user/offset-testing/build-dbg/CMakeFiles/CMakeScratch/TryCompile-H95kUn"
+      binary: "/home/user/offset-testing/build-dbg/CMakeFiles/CMakeScratch/TryCompile-H95kUn"
+    cmakeVariables:
+      ANDROID_ABI: "arm64-v8a"
+      ANDROID_ARM_MODE: "thumb"
+      ANDROID_PIE: "TRUE"
+      ANDROID_PLATFORM: "android-26"
+      ANDROID_STL: "c++_static"
+      ANDROID_TOOLCHAIN: "clang"
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND"
+      CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN: "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64"
+      CMAKE_CXX_COMPILER_TARGET: "aarch64-none-linux-android26"
+      CMAKE_CXX_FLAGS: "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat  "
+      CMAKE_CXX_FLAGS_DEBUG: "-fno-limit-debug-info "
+      CMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN: "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64"
+      CMAKE_C_COMPILER_TARGET: "aarch64-none-linux-android26"
+      CMAKE_EXE_LINKER_FLAGS: "-static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments -Wl,--gc-sections "
+      CMAKE_POSITION_INDEPENDENT_CODE: "TRUE"
+      CMAKE_SYSROOT: "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/user/offset-testing/build-dbg/CMakeFiles/CMakeScratch/TryCompile-H95kUn'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_8374d
+        [1/2] /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --gcc-toolchain=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64 --sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat    -fPIE   -v -MD -MT CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-3.28/Modules/CMakeCXXCompilerABI.cpp
+        Android (8481493, based on r416183c2) clang version 12.0.9 (https://android.googlesource.com/toolchain/llvm-project c935d99d7cf2016289302412d708641d52d2f7ee)
+        Target: aarch64-none-linux-android26
+        Thread model: posix
+        InstalledDir: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin
+        Found candidate GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x
+        Selected GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x
+        Candidate multilib: .;@m64
+        Selected multilib: .;@m64
+         (in-process)
+         "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" -cc1 -triple aarch64-none-linux-android26 -emit-obj -mrelax-all --mrelax-relocations -mnoexecstack -disable-free -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -fno-rounding-math -mconstructor-aliases -munwind-tables -target-cpu generic -target-feature +neon -target-abi aapcs -mllvm -aarch64-fix-cortex-a53-835769=1 -fallow-half-arguments-and-returns -fno-split-dwarf-inlining -debug-info-kind=limited -dwarf-version=4 -debugger-tuning=gdb -v -ffunction-sections -fdata-sections -resource-dir /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9 -dependency-file CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -D ANDROID -D _FORTIFY_SOURCE=2 -isysroot /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot -internal-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1 -internal-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include -internal-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include -internal-externc-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -internal-externc-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include -internal-externc-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Wformat -fdeprecated-macro -fdebug-compilation-dir /home/user/offset-testing/build-dbg/CMakeFiles/CMakeScratch/TryCompile-H95kUn -ferror-limit 19 -stack-protector 2 -fno-signed-char -fgnuc-version=4.2.1 -fcxx-exceptions -fexceptions -o CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/share/cmake-3.28/Modules/CMakeCXXCompilerABI.cpp
+        clang -cc1 version 12.0.9 based upon LLVM 12.0.9git default target x86_64-unknown-linux-gnu
+        ignoring nonexistent directory "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1
+         /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include
+         /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include
+         /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android
+         /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+        End of search list.
+        [2/2] : && /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --gcc-toolchain=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64 --sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments -Wl,--gc-sections  -v CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_8374d   && :
+        Android (8481493, based on r416183c2) clang version 12.0.9 (https://android.googlesource.com/toolchain/llvm-project c935d99d7cf2016289302412d708641d52d2f7ee)
+        Target: aarch64-none-linux-android26
+        Thread model: posix
+        InstalledDir: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin
+        Found candidate GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x
+        Selected GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x
+        Candidate multilib: .;@m64
+        Selected multilib: .;@m64
+         "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/ld" --sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot -pie -z noexecstack -EL --fix-cortex-a53-843419 --warn-shared-textrel -z now -z relro -z max-page-size=4096 --hash-style=gnu --enable-new-dtags --eh-frame-hdr -m aarch64linux -dynamic-linker /system/bin/linker64 -o cmTC_8374d /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtbegin_dynamic.o -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64 -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26 -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib --build-id=sha1 --no-rosegment --fatal-warnings --no-undefined --gc-sections CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -Bstatic -lc++ -Bdynamic -lm /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl -lc /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtend_android.o
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerABI.cmake:127 (message)"
+      - "/usr/share/cmake-3.28/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:3 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1]
+          add: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+          add: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include]
+          add: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+          add: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+        end of search list found
+        collapse include dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1]
+        collapse include dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+        collapse include dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include]
+        collapse include dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+        collapse include dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+        implicit include dirs: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerABI.cmake:159 (message)"
+      - "/usr/share/cmake-3.28/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:3 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld\\.lld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        ignore line: [Change Dir: '/home/user/offset-testing/build-dbg/CMakeFiles/CMakeScratch/TryCompile-H95kUn']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/bin/ninja -v cmTC_8374d]
+        ignore line: [[1/2] /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --gcc-toolchain=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64 --sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat    -fPIE   -v -MD -MT CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-3.28/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Android (8481493  based on r416183c2) clang version 12.0.9 (https://android.googlesource.com/toolchain/llvm-project c935d99d7cf2016289302412d708641d52d2f7ee)]
+        ignore line: [Target: aarch64-none-linux-android26]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin]
+        ignore line: [Found candidate GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x]
+        ignore line: [Selected GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [ (in-process)]
+        ignore line: [ "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" -cc1 -triple aarch64-none-linux-android26 -emit-obj -mrelax-all --mrelax-relocations -mnoexecstack -disable-free -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -fno-rounding-math -mconstructor-aliases -munwind-tables -target-cpu generic -target-feature +neon -target-abi aapcs -mllvm -aarch64-fix-cortex-a53-835769=1 -fallow-half-arguments-and-returns -fno-split-dwarf-inlining -debug-info-kind=limited -dwarf-version=4 -debugger-tuning=gdb -v -ffunction-sections -fdata-sections -resource-dir /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9 -dependency-file CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -D ANDROID -D _FORTIFY_SOURCE=2 -isysroot /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot -internal-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1 -internal-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include -internal-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include -internal-externc-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -internal-externc-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include -internal-externc-isystem /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Wformat -fdeprecated-macro -fdebug-compilation-dir /home/user/offset-testing/build-dbg/CMakeFiles/CMakeScratch/TryCompile-H95kUn -ferror-limit 19 -stack-protector 2 -fno-signed-char -fgnuc-version=4.2.1 -fcxx-exceptions -fexceptions -o CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/share/cmake-3.28/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [clang -cc1 version 12.0.9 based upon LLVM 12.0.9git default target x86_64-unknown-linux-gnu]
+        ignore line: [ignoring nonexistent directory "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1]
+        ignore line: [ /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+        ignore line: [ /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/include]
+        ignore line: [ /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+        ignore line: [ /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android26 --gcc-toolchain=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64 --sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -static-libstdc++ -Wl --build-id=sha1 -Wl --no-rosegment -Wl --fatal-warnings -Wl --no-undefined -Qunused-arguments -Wl --gc-sections  -v CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_8374d   && :]
+        ignore line: [Android (8481493  based on r416183c2) clang version 12.0.9 (https://android.googlesource.com/toolchain/llvm-project c935d99d7cf2016289302412d708641d52d2f7ee)]
+        ignore line: [Target: aarch64-none-linux-android26]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin]
+        ignore line: [Found candidate GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x]
+        ignore line: [Selected GCC installation: /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        link line: [ "/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/ld" --sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot -pie -z noexecstack -EL --fix-cortex-a53-843419 --warn-shared-textrel -z now -z relro -z max-page-size=4096 --hash-style=gnu --enable-new-dtags --eh-frame-hdr -m aarch64linux -dynamic-linker /system/bin/linker64 -o cmTC_8374d /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtbegin_dynamic.o -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64 -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26 -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android -L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib --build-id=sha1 --no-rosegment --fatal-warnings --no-undefined --gc-sections CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o -Bstatic -lc++ -Bdynamic -lm /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl -lc /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl /tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtend_android.o]
+          arg [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/bin/ld] ==> ignore
+          arg [--sysroot=/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znoexecstack] ==> ignore
+          arg [-EL] ==> ignore
+          arg [--fix-cortex-a53-843419] ==> ignore
+          arg [--warn-shared-textrel] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-zmax-page-size=4096] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--enable-new-dtags] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [aarch64linux] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/system/bin/linker64] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_8374d] ==> ignore
+          arg [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtbegin_dynamic.o] ==> obj [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtbegin_dynamic.o]
+          arg [-L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64] ==> dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64]
+          arg [-L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x] ==> dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x]
+          arg [-L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26] ==> dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26]
+          arg [-L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android] ==> dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android]
+          arg [-L/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib] ==> dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+          arg [--build-id=sha1] ==> ignore
+          arg [--no-rosegment] ==> ignore
+          arg [--fatal-warnings] ==> ignore
+          arg [--no-undefined] ==> ignore
+          arg [--gc-sections] ==> ignore
+          arg [CMakeFiles/cmTC_8374d.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-Bstatic] ==> search static
+          arg [-lc++] ==> lib [c++]
+          arg [-Bdynamic] ==> search dynamic
+          arg [-lm] ==> lib [m]
+          arg [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a] ==> lib [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a]
+          arg [-l:libunwind.a] ==> lib [-l:libunwind.a]
+          arg [-ldl] ==> lib [dl]
+          arg [-lc] ==> lib [c]
+          arg [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a] ==> lib [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a]
+          arg [-l:libunwind.a] ==> lib [-l:libunwind.a]
+          arg [-ldl] ==> lib [dl]
+          arg [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtend_android.o] ==> obj [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtend_android.o]
+        remove lib [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a]
+        remove lib [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/libclang_rt.builtins-aarch64-android.a]
+        collapse library dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64]
+        collapse library dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x]
+        collapse library dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26]
+        collapse library dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android]
+        collapse library dir [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib] ==> [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+        implicit libs: [c++;m;-l:libunwind.a;dl;c;-l:libunwind.a;dl]
+        implicit objs: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtbegin_dynamic.o;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26/crtend_android.o]
+        implicit dirs: [/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/12.0.9/lib/linux/aarch64;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/lib/gcc/aarch64-linux-android/4.9.x;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/26;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android;/tmp/claude-0/-home-user-BCU-PC-Update/b3a4bfed-3020-5e61-81d4-26860228b9d8/scratchpad/android-ndk-r23c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+        implicit fwks: []
+      
+      
+...

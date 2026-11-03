@@ -31,6 +31,10 @@ jobs:
           $B/llvm-readelf -S build/libOffsetLab.so | grep -q '\.config'
           # only Dear ImGui may come from Canvas's libciphered.so: no C++ runtime imports
           ! $B/llvm-nm -D -u build/libOffsetLab.so | grep -E ' (_Znwm|_ZdlPv|__cxa_throw|__gxx_personality_v0)$'
+          # never import process_vm_readv by name (Canvas exports a variable with that name), and list libc
+          # before libciphered.so so system names are found first
+          ! $B/llvm-nm -D -u build/libOffsetLab.so | grep -E ' process_vm_readv$'
+          $B/llvm-readelf -d build/libOffsetLab.so | grep NEEDED | grep -n 'libc.so\|libciphered.so' | head -1 | grep -q 'libc.so'
       - uses: actions/upload-artifact@v4
         with:
           name: libOffsetLab

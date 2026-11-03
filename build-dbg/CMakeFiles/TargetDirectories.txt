@@ -1,0 +1,4 @@
+/home/user/offset-testing/build-dbg/CMakeFiles/ciphered.dir
+/home/user/offset-testing/build-dbg/CMakeFiles/OffsetLab.dir
+/home/user/offset-testing/build-dbg/CMakeFiles/edit_cache.dir
+/home/user/offset-testing/build-dbg/CMakeFiles/rebuild_cache.dir
