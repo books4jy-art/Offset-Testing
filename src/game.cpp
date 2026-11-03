@@ -1,0 +1,151 @@
+// Game access: finding libBootloader.so, crash-safe reads, running Lua, the type table.
+#include "lab.h"
+
+#include <android/log.h>
+#include <dlfcn.h>
+#include <link.h>
+#include <sys/uio.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <deque>
+#include <mutex>
+
+namespace lab {
+
+#include "generated/lab_data.inc"
+
+const char* const kAreaNames[kAreaCount] = {
+    "Avatar & movement", "Camera & photo", "Weather, sky & visuals", "Music & sound", "Menus & UI",
+    "Social & multiplayer", "Levels, travel & teleport", "Spirits, NPCs & creatures", "Quests, events & progression",
+    "Props, toys & minigames", "Other", "NPC behaviour (internal)", "Engine systems (internal)", "Server & account",
+};
+
+const LabType* Types(size_t* count) {
+    *count = LAB_TYPE_COUNT;
+    return kTypes;
+}
+uint32_t FieldNameAddr(size_t i) { return kFieldNames[i]; }
+uint32_t NoteAddr(size_t i) { return kNotes[i]; }
+uint32_t RegisterFunction() { return LAB_REGISTER_FN; }
+
+// Sky 0.35.2 addresses (offsets from the start of libBootloader.so)
+namespace addr {
+constexpr uintptr_t kGamePointer = 0x33A5E80;  // pointer to the game's main object
+constexpr uintptr_t kGameLuaState = 0x20;      // lua_State* inside the game object
+constexpr uintptr_t kRunLua = 0x29ADFA4;       // int (lua_State*, const char* script), 0 = ok
+}  // namespace addr
+
+// ---------------------------------------------------------------- base & memory
+
+static uintptr_t gImageEnd = 0;  // end of libBootloader.so's loaded image
+
+static int FindBase(dl_phdr_info* info, size_t, void* data) {
+    if (info->dlpi_name && strstr(info->dlpi_name, "libBootloader.so")) {
+        *static_cast<uintptr_t*>(data) = info->dlpi_addr;
+        for (int i = 0; i < info->dlpi_phnum; i++)
+            if (info->dlpi_phdr[i].p_type == PT_LOAD) {
+                uintptr_t end = info->dlpi_addr + info->dlpi_phdr[i].p_vaddr + info->dlpi_phdr[i].p_memsz;
+                if (end > gImageEnd) gImageEnd = end;
+            }
+        return 1;
+    }
+    return 0;
+}
+
+uintptr_t GameBase() {
+    static uintptr_t base = 0;
+    if (!base)
+        dl_iterate_phdr(FindBase, &base);
+    return base;
+}
+
+bool ReadMemory(uintptr_t a, void* out, size_t len) {
+    if (!a || !len)
+        return false;
+    iovec local{out, len}, remote{reinterpret_cast<void*>(a), len};
+    ssize_t n = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
+    if (n == static_cast<ssize_t>(len))
+        return true;
+    // Where the system doesn't allow process_vm_readv, read directly, but only inside libBootloader.so's image
+    if (n < 0 && (errno == ENOSYS || errno == EPERM || errno == EACCES)) {
+        uintptr_t base = GameBase();
+        if (base && a >= base && a + len <= gImageEnd) {
+            memcpy(out, reinterpret_cast<const void*>(a), len);
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string ReadString(uintptr_t a, size_t max) {
+    std::string s;
+    char buf[64];
+    while (s.size() < max) {
+        // stay inside the page, so a string near the end of mapped memory is still read
+        size_t n = 64 - ((a + s.size()) & 63);
+        if (!ReadMemory(a + s.size(), buf, n))
+            break;
+        for (size_t i = 0; i < n; i++) {
+            if (!buf[i])
+                return s;
+            s.push_back(buf[i]);
+        }
+    }
+    return s;
+}
+
+std::string GameString(uint32_t offset) {
+    uintptr_t base = GameBase();
+    return base && offset ? ReadString(base + offset) : std::string();
+}
+
+uint32_t Fnv1a(const std::string& s) {
+    uint32_t h = 0x811C9DC5u;
+    for (unsigned char c : s)
+        h = (h ^ c) * 0x01000193u;
+    return h;
+}
+
+uintptr_t GameObject() {
+    uintptr_t base = GameBase(), game = 0;
+    if (!base || !ReadMemory(base + addr::kGamePointer, &game, sizeof game))
+        return 0;
+    return game;
+}
+
+int RunLua(const std::string& script) {
+    uintptr_t base = GameBase(), game = GameObject(), L = 0;
+    if (!base || !game || !ReadMemory(game + addr::kGameLuaState, &L, sizeof L) || !L)
+        return -1;
+    using RunFn = int (*)(void*, const char*);
+    return reinterpret_cast<RunFn>(base + addr::kRunLua)(reinterpret_cast<void*>(L), script.c_str());
+}
+
+// ---------------------------------------------------------------- log
+
+static std::mutex gLogMutex;
+static std::deque<std::string> gLog;
+
+void Log(const char* fmt, ...) {
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    __android_log_print(ANDROID_LOG_INFO, "OffsetLab", "%s", buf);
+    std::lock_guard<std::mutex> lk(gLogMutex);
+    gLog.emplace_back(buf);
+    while (gLog.size() > 400)
+        gLog.pop_front();
+}
+
+std::vector<std::string> LogLines() {
+    std::lock_guard<std::mutex> lk(gLogMutex);
+    return {gLog.begin(), gLog.end()};
+}
+
+}  // namespace lab

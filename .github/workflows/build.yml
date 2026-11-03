@@ -1,0 +1,46 @@
+# Builds libOffsetLab.so (Android NDK r23c) on every push. On main, publishes a release v<version> (from
+# config/config.json) when that version has no release yet, so Canvas's update button finds it.
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r23c
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Check the mod
+        run: |
+          B=${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin
+          $B/llvm-nm -D --defined-only build/libOffsetLab.so | grep -q ' T Start$'
+          $B/llvm-readelf -S build/libOffsetLab.so | grep -q '\.config'
+          # only Dear ImGui may come from Canvas's libciphered.so: no C++ runtime imports
+          ! $B/llvm-nm -D -u build/libOffsetLab.so | grep -E ' (_Znwm|_ZdlPv|__cxa_throw|__gxx_personality_v0)$'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libOffsetLab
+          path: build/libOffsetLab.so
+      - name: Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(python3 -c "import json;c=json.load(open('config/config.json'));print('%d.%d.%d'%(c['majorVersion'],c['minorVersion'],c['patchVersion']))")
+          if gh release view "v$v" >/dev/null 2>&1; then echo "v$v already released"; exit 0; fi
+          gh release create "v$v" build/libOffsetLab.so --target "$GITHUB_SHA" --title "Offset Lab v$v" \
+            --notes "Offset Lab v$v for Sky 0.35.2 (Canvas / Sky Modloader, arm64). Experimental: see the README."

@@ -1,0 +1,3 @@
+build/
+*.so
+!third_party/**/*.a
