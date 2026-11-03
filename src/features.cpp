@@ -110,9 +110,9 @@ const char* kPrelude =
 // Events have Start, SetEnabled and GetEnabled in the game's Lua (the EventBarn binding); there is no Stop, so a
 // feature is switched off with SetEnabled(false).
 
-bool Run(const std::string& what, const std::string& script) {
+bool Run(const std::string& what, const std::string& script, const std::string& key = "") {
     // what == "" for repeats (Scatter, repeated Shout): only problems are logged
-    int r = RunLua(script, what.empty() ? "Repeat" : what);
+    int r = RunLua(script, what.empty() ? "Repeat" : what, key);
     const char* w = what.empty() ? "Repeat" : what.c_str();
     if (r == -1) Log("%s: enter the world first", w);
     else if (r == -3) Log("%s: the game isn't running frames right now", w);
@@ -237,13 +237,15 @@ bool StartEvent(const std::string& what, const std::string& keyIn, const char* t
     }
     s += "e:Start()\n";
     if (!key.empty()) s += "OffsetLab[\"" + key + "\"] = e\n";
+    // coalescing key for the queue: the feature's key (also for one-shots, e.g. one per outfit slot), else the type
+    const std::string queueKey = keyIn.empty() ? std::string("once:") + type : keyIn;
     s += "if #bad > 0 and print then pcall(print, \"Offset Lab: " + std::string(type) +
          " didn't take \" .. table.concat(bad, \", \")) end\n";
-    return Run(what, s);
+    return Run(what, s, queueKey);
 }
 
 bool StopEvent(const std::string& what, const std::string& key) {
-    return Run(what, std::string(kPrelude) + "stop(\"" + key + "\")\n");
+    return Run(what, std::string(kPrelude) + "stop(\"" + key + "\")\n", key);
 }
 
 std::string Quote(const std::string& s) {  // a Lua string
@@ -511,16 +513,40 @@ bool IconRow(const std::string& icon, const std::string& label, const char* id) 
     return r;
 }
 
-const Json& Asset(const char* path, Json& cache, bool& tried) {
-    if (!tried && GameBase()) {
-        tried = true;
-        char buf[256];
-        snprintf(buf, sizeof buf, "%s", path);
-        const char* text = Cipher::read_asset(buf);
-        if (text) cache = Json::Parse(text);
-        Log("%s: %s", path, !text ? "couldn't be read" : cache.kind == Json::kNull ? "couldn't be parsed" : "loaded");
+// One entry of the game's outfit or collectible file: only what the lists need.
+struct DefItem { std::string name, type, icon; int maxLevel = 1; };
+
+// Reads a definition file from the game's assets once, keeping only name/type/icon/max_level (a full tree of the
+// game's outfit file took a lot of memory).
+void LoadDefs(const char* path, const char* arrayKey, std::vector<DefItem>& out, bool& tried) {
+    if (tried || !GameBase()) return;
+    tried = true;
+    char buf[256];
+    snprintf(buf, sizeof buf, "%s", path);
+    const char* text = Cipher::read_asset(buf);
+    if (!text) {
+        Log("%s: couldn't be read", path);
+        return;
     }
-    return cache;
+    static const std::vector<std::string> kKeep = {"name", "type", "icon", "max_level"};
+    Json j = Json::Parse(text, &kKeep);
+    const std::vector<Json>* list = j.kind == Json::kArray ? &j.a : nullptr;
+    if (!list)
+        for (const char* k : {arrayKey, "items"})
+            if (const Json* v = j.get(k)) if (v->kind == Json::kArray) { list = &v->a; break; }
+    if (!list) {
+        Log("%s: couldn't be parsed", path);
+        return;
+    }
+    out.clear();
+    out.reserve(list->size());
+    for (const auto& it : *list) {
+        DefItem d{it.str("name"), it.str("type"), it.str("icon"), (int)it.num("max_level", 1)};
+        for (auto& c : d.type) c = (char)tolower((unsigned char)c);
+        if (!d.name.empty()) out.push_back(std::move(d));
+    }
+    out.shrink_to_fit();
+    Log("%s: %zu entries", path, out.size());
 }
 
 const std::vector<Json>* ArrayOf(const Json& j, const char* key) {
@@ -553,8 +579,11 @@ struct More {
     double gravityResetAt = 0;
     double killNext = 0;  // when to stop the "crawl 0" event after Crawl off
     // outfits
-    Json outfitDefs;
+    std::vector<DefItem> outfits;
     bool outfitTried = false;
+    std::vector<std::pair<std::string, std::string>> outfitTypes;  // category, its first icon
+    std::vector<int> outfitRows;   // filtered list, rebuilt only when the filter changes
+    std::string outfitRowsFor = "\x01";
     std::string outfitType;
     bool npcOutfits = false;
     char outfitFilter[64] = "";
@@ -568,8 +597,10 @@ struct More {
     float pogoEvery = 1.f;
     double pogoNext = 0;
     // emotes
-    Json collectibles;
+    std::vector<DefItem> collectibles;
     bool collectiblesTried = false;
+    std::vector<int> emoteRows;
+    std::string emoteRowsFor = "\x01";
     int emoteLevel = 1;
     float emoteSpeed = 1.f, emoteLoop = 0.f;
     bool emoteMirror = false;
@@ -846,24 +877,24 @@ void TransformSection() {
 }
 
 void OutfitsSection() {
-    const Json& defs = Asset("Data/Resources/OutfitDefs.json", M.outfitDefs, M.outfitTried);
-    const std::vector<Json>* list = ArrayOf(defs, "outfits");
+    LoadDefs("Data/Resources/OutfitDefs.json", "outfits", M.outfits, M.outfitTried);
     Section("CHANGE OUTFITS", "Wears an outfit on your avatar (AvatarSetOutfit; local). The list is the game's own "
                               "outfit file, NPC outfits included when switched on.");
-    if (!list) {
+    if (M.outfits.empty()) {
         Dim("The outfit list couldn't be read from the game yet (enter the world and open this again).");
-        if (ImGui::Button("Try again")) M.outfitTried = false;
+        if (ImGui::Button("Try again")) M.outfitTried = false, M.outfitTypes.clear();
         return;
     }
-    // categories (outfit types), each with its first item's icon
-    std::vector<std::pair<std::string, std::string>> types;
-    for (const auto& it : *list) {
-        std::string t = Lower(it.str("type"));
-        if (t.empty()) continue;
-        bool have = false;
-        for (auto& x : types) have |= x.first == t;
-        if (!have) types.push_back({t, it.str("icon")});
+    if (M.outfitTypes.empty()) {  // categories (outfit types), each with its first item's icon: once
+        for (const auto& it : M.outfits) {
+            if (it.type.empty()) continue;
+            bool have = false;
+            for (auto& x : M.outfitTypes) have |= x.first == it.type;
+            if (!have) M.outfitTypes.push_back({it.type, it.icon});
+        }
+        M.outfitRowsFor = "\x01";
     }
+    const auto& types = M.outfitTypes;
     if (M.outfitType.empty() && !types.empty()) M.outfitType = types[0].first;
     float sz = ImGui::GetFrameHeight();
     for (size_t i = 0; i < types.size(); i++) {
@@ -883,24 +914,30 @@ void OutfitsSection() {
     ImGui::InputTextWithHint("##of", "search", M.outfitFilter, sizeof M.outfitFilter);
     ImGui::SameLine();
     ImGui::Checkbox("NPC outfits too", &M.npcOutfits);
-    std::vector<const Json*> rows;
     std::string q = Lower(M.outfitFilter);
-    for (const auto& it : *list) {
-        if (Lower(it.str("type")) != M.outfitType) continue;
-        std::string name = it.str("name");
-        if (!M.npcOutfits && name.rfind("CharSkyKid", 0) != 0) continue;
-        if (!q.empty() && Lower(name).find(q) == std::string::npos) continue;
-        rows.push_back(&it);
+    std::string want = M.outfitType + "|" + q + (M.npcOutfits ? "|npc" : "|kid");
+    if (want != M.outfitRowsFor) {  // only when the category, search or NPC switch changed
+        M.outfitRowsFor = want;
+        M.outfitRows.clear();
+        for (int i = 0; i < (int)M.outfits.size(); i++) {
+            const auto& it = M.outfits[i];
+            if (it.type != M.outfitType) continue;
+            if (!M.npcOutfits && it.name.rfind("CharSkyKid", 0) != 0) continue;
+            if (!q.empty() && Lower(it.name).find(q) == std::string::npos) continue;
+            M.outfitRows.push_back(i);
+        }
     }
+    const auto& rows = M.outfitRows;
     Dim("%zu outfits", rows.size());
     if (ImGui::BeginChild("##outfits", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 10.5f), ImGuiChildFlags_Border)) {
         ImGuiListClipper clip;
         clip.Begin((int)rows.size());
         while (clip.Step())
             for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
-                std::string name = rows[i]->str("name");
+                const DefItem& d = M.outfits[rows[i]];
+                const std::string& name = d.name;
                 std::string label = name.rfind("CharSkyKid_", 0) == 0 ? name.substr(11) : name;
-                if (IconRow(rows[i]->str("icon"), label, name.c_str()))
+                if (IconRow(d.icon, label, name.c_str()))
                     StartEvent("Outfit: " + name, "outfit_" + M.outfitType, "AvatarSetOutfit",
                                {{M.outfitType, Quote(name), ""}});
             }
@@ -939,9 +976,7 @@ void OutfitsSection() {
 }
 
 void EmotesSection() {
-    const Json& defs = Asset("Data/Resources/CollectibleDefs.json", M.collectibles, M.collectiblesTried);
-    const std::vector<Json>* list = ArrayOf(defs, "collectibles");
-    if (!list) list = ArrayOf(defs, "items");
+    LoadDefs("Data/Resources/CollectibleDefs.json", "collectibles", M.collectibles, M.collectiblesTried);
     Section("EMOTES", "Plays any emote on your avatar (AvatarPlayEmote), with level, speed and loop time.");
     SliderInt("level", &M.emoteLevel, 1, 6, 1);
     Slider("espeed", &M.emoteSpeed, 0.1f, 4.f, 1.f, "speed %.2f");
@@ -950,28 +985,34 @@ void EmotesSection() {
     ImGui::SameLine();
     if (ImGui::Button("Stop emote"))
         StartEvent("Emote stopped", "", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
-    if (!list) {
+    if (M.collectibles.empty()) {
         Dim("The emote list couldn't be read from the game yet (enter the world and open this again).");
         if (ImGui::Button("Try again")) M.collectiblesTried = false;
         return;
     }
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##ef", "search", M.emoteFilter, sizeof M.emoteFilter);
-    std::vector<const Json*> rows;
     std::string q = Lower(M.emoteFilter);
-    for (const auto& it : *list) {
-        if (Lower(it.str("type")) != "emote") continue;
-        if (!q.empty() && Lower(it.str("name")).find(q) == std::string::npos) continue;
-        rows.push_back(&it);
+    if (q != M.emoteRowsFor) {  // only when the search changed
+        M.emoteRowsFor = q;
+        M.emoteRows.clear();
+        for (int i = 0; i < (int)M.collectibles.size(); i++) {
+            const auto& it = M.collectibles[i];
+            if (it.type != "emote") continue;
+            if (!q.empty() && Lower(it.name).find(q) == std::string::npos) continue;
+            M.emoteRows.push_back(i);
+        }
     }
+    const auto& rows = M.emoteRows;
     if (ImGui::BeginChild("##emotes", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 12.5f), ImGuiChildFlags_Border)) {
         ImGuiListClipper clip;
         clip.Begin((int)rows.size());
         while (clip.Step())
             for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
-                std::string name = rows[i]->str("name"), icon = rows[i]->str("icon");
+                const DefItem& d = M.collectibles[rows[i]];
+                std::string name = d.name, icon = d.icon;
                 if (icon.size() > 4 && icon.compare(icon.size() - 4, 4, "Anim") == 0) icon.replace(icon.size() - 4, 4, "0");
-                int maxLv = (int)rows[i]->num("max_level", 1);
+                int maxLv = d.maxLevel;
                 std::string label = name + "  (levels 1-" + std::to_string(maxLv) + ")";
                 if (IconRow(icon, label, name.c_str())) {
                     int lv = std::min(std::max(1, M.emoteLevel), std::max(1, maxLv));

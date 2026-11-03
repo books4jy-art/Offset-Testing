@@ -22,6 +22,13 @@ margins, rows at least 36 dp high, 44 dp sub-tab buttons, text 15 dp high. **Siz
 Lists scroll by dragging the content (a vertical drag that starts on a button scrolls instead of pressing it).
 Features that repeat keep running while the panel is collapsed.
 
+**Fast presses.** Each press queues a script for the game's main thread. A newer press for the same feature replaces
+one still waiting (only the latest counts), at most 4 scripts run per frame, and the same feature runs at most every
+0.15 s: pressing quickly used to start, switch off and restart events many times in one frame and could crash the game.
+
+**Memory.** The game's outfit and collectible files are read once and only `name`, `type`, `icon` and `max_level` are
+kept (the rest is read past); the lists are re-filtered only when the category or search changes.
+
 **Handles.** Events that do their thing and finish (spells, outfits, shout, emotes, bounce, flash, shake, kill…) are
 deleted by the game by themselves, so they're never kept or switched off: switching off a deleted event crashed the
 game ("Invalid meta class id"). Kept events are dropped when the level changes, for the same reason.

@@ -65,7 +65,8 @@ uintptr_t GameObject();                      // the game's main object (0 when n
 // Runs Lua in the game, on the game's main thread (queued for its next frame). Returns 0 when queued (errors are
 // logged later, under `what`), -1 when the game isn't ready, -3 when the queue is full. If the frame hook can't be
 // placed, runs directly and returns the game's result code (0 = ok).
-int RunLua(const std::string& script, const std::string& what = "");
+// key: jobs with the same key replace each other while waiting, and run at least 0.15 s apart.
+int RunLua(const std::string& script, const std::string& what = "", const std::string& key = "");
 std::string LuaStatus();  // where Lua runs and how many scripts wait
 
 // ---- exported functions (read from the game's own symbol table) ----

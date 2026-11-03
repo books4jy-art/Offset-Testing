@@ -32,10 +32,12 @@ struct Json {
         return v && v->kind == kNumber ? v->n : def;
     }
 
-    static Json Parse(const char* text) {
+    // keep: when given, objects below the top level store only these keys (the others are read past and dropped),
+    // so a big definition file costs little memory.
+    static Json Parse(const char* text, const std::vector<std::string>* keep = nullptr) {
         const char* p = text;
         Json j;
-        if (!Value(p, j, 0)) j = Json();
+        if (!Value(p, j, 0, keep)) j = Json();
         return j;
     }
 
@@ -89,7 +91,7 @@ private:
         p++;
         return true;
     }
-    static bool Value(const char*& p, Json& j, int depth) {
+    static bool Value(const char*& p, Json& j, int depth, const std::vector<std::string>* keep) {
         if (depth > 64) return false;
         Ws(p);
         if (*p == '{') {
@@ -105,8 +107,11 @@ private:
                 if (*p != ':') return false;
                 p++;
                 Json v;
-                if (!Value(p, v, depth + 1)) return false;
-                j.o[key] = std::move(v);
+                if (!Value(p, v, depth + 1, keep)) return false;
+                bool wanted = !keep || depth == 0;
+                if (!wanted)
+                    for (const auto& k : *keep) wanted |= k == key;
+                if (wanted) j.o[key] = std::move(v);
                 Ws(p);
                 if (*p == ',') { p++; Ws(p); if (*p == '}') { p++; return true; } continue; }
                 if (*p == '}') { p++; return true; }
@@ -120,7 +125,7 @@ private:
             if (*p == ']') { p++; return true; }
             for (;;) {
                 Json v;
-                if (!Value(p, v, depth + 1)) return false;
+                if (!Value(p, v, depth + 1, keep)) return false;
                 j.a.push_back(std::move(v));
                 Ws(p);
                 if (*p == ',') { p++; Ws(p); if (*p == ']') { p++; return true; } continue; }

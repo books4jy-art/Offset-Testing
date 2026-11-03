@@ -18,6 +18,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <time.h>
 #include <vector>
 
 namespace lab {
@@ -236,18 +237,37 @@ static int RunLuaHere(const std::string& script) {
 // at the start of a function the game calls every frame on that thread (TheVoid's Lua update hook, 0x17BB310 in
 // 0.35.1). If the hook can't be placed, scripts run directly as before.
 namespace {
-struct Job { std::string script, what; };
+// Pressing buttons fast queued many scripts that all ran in one frame (start, switch off, start again...), which
+// could crash the game. Now: a newer job for the same key replaces a waiting one (only the latest press counts), at
+// most 4 jobs run per frame, and jobs for the same key run at least 0.15 s apart.
+struct Job { std::string script, what, key; };
 std::mutex gJobMutex;
 std::deque<Job> gJobs;
+std::map<std::string, double> gLastRun;  // key -> when its last job ran
 std::atomic<int> gHook{0};  // 0 = not tried, 1 = active, -1 = failed (run directly)
+
+double NowSeconds() {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 
 void OnFrame(void*, DobbyRegisterContext*) {
     std::deque<Job> jobs;
     {
         std::lock_guard<std::mutex> lk(gJobMutex);
-        for (int i = 0; i < 32 && !gJobs.empty(); i++) {
-            jobs.push_back(std::move(gJobs.front()));
-            gJobs.pop_front();
+        double now = NowSeconds();
+        for (auto it = gJobs.begin(); it != gJobs.end() && jobs.size() < 4;) {
+            if (!it->key.empty()) {
+                auto last = gLastRun.find(it->key);
+                if (last != gLastRun.end() && now - last->second < 0.15) {
+                    ++it;  // too soon after the last one for this key: next frame
+                    continue;
+                }
+                gLastRun[it->key] = now;
+            }
+            jobs.push_back(std::move(*it));
+            it = gJobs.erase(it);
         }
     }
     for (auto& j : jobs) {
@@ -285,13 +305,20 @@ std::string LuaStatus() {
     return b;
 }
 
-int RunLua(const std::string& script, const std::string& what) {
+int RunLua(const std::string& script, const std::string& what, const std::string& key) {
     if (gHook == 0) InstallFrameHook();
     if (gHook != 1) return RunLuaHere(script);
     if (!GameObject()) return -1;
     std::lock_guard<std::mutex> lk(gJobMutex);
+    if (!key.empty())
+        for (auto& j : gJobs)
+            if (j.key == key) {  // still waiting: the newer press replaces it
+                j.script = script;
+                j.what = what;
+                return 0;
+            }
     if (gJobs.size() > 256) return -3;  // the game isn't running frames
-    gJobs.push_back({script, what});
+    gJobs.push_back({script, what, key});
     return 0;
 }
 
