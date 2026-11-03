@@ -251,11 +251,11 @@ bool Toggle(const char* label, bool* on, const char* help) {
 // Slider + reset button. Returns 1 when let go after a change, 2 when reset.
 int Slider(const char* label, float* v, float lo, float hi, float normal, const char* fmt) {
     ImGui::PushID(label);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
     ImGui::SliderFloat("##s", v, lo, hi, fmt);
     int r = ImGui::IsItemDeactivatedAfterEdit() ? 1 : 0;
     ImGui::SameLine();
-    if (ImGui::Button("Reset", ImVec2(130, 0))) {
+    if (ImGui::Button("Reset", ImVec2(Px(130), 0))) {
         *v = normal;
         r = 2;
     }
@@ -265,11 +265,11 @@ int Slider(const char* label, float* v, float lo, float hi, float normal, const 
 
 int SliderInt(const char* label, int* v, int lo, int hi, int normal) {
     ImGui::PushID(label);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
     ImGui::SliderInt("##s", v, lo, hi);
     int r = ImGui::IsItemDeactivatedAfterEdit() ? 1 : 0;
     ImGui::SameLine();
-    if (ImGui::Button("Reset", ImVec2(130, 0))) {
+    if (ImGui::Button("Reset", ImVec2(Px(130), 0))) {
         *v = normal;
         r = 2;
     }
@@ -669,7 +669,7 @@ void PlayerSection(bool inWorld) {
     ImGui::TextUnformatted("Pogo stick");
     Dim("Bounces you up at this speed: higher = farther jumps. Bounce once, or keep bouncing.");
     Slider("pogo", &M.pogo, 1.f, 60.f, 8.f, "%.1f");
-    if (ImGui::Button("Bounce", ImVec2(200, 0))) Bounce(false);
+    if (ImGui::Button("Bounce", ImVec2(Px(200), 0))) Bounce(false);
     ImGui::SameLine();
     ImGui::Checkbox("Keep bouncing", &M.pogoKeep);
     Slider("pogoevery", &M.pogoEvery, 0.2f, 5.f, 1.f, "every %.1f s");
@@ -717,14 +717,14 @@ void PlayerSection(bool inWorld) {
             StartEvent("", "animstop", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
         }
     }
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 220);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(220));
     ImGui::InputText("##anim", M.anim, sizeof M.anim);
     ImGui::SameLine();
-    if (ImGui::Button("Play", ImVec2(100, 0)))
+    if (ImGui::Button("Play", ImVec2(Px(100), 0)))
         StartEvent(std::string("Animation ") + M.anim, "anim", "PlayAvatarAnimSeq",
                    {{"animName", Quote(M.anim), ""}, {"paradeEmote", "true", ""}});
     ImGui::SameLine();
-    if (ImGui::Button("Stop", ImVec2(100, 0))) {
+    if (ImGui::Button("Stop", ImVec2(Px(100), 0))) {
         StopEvent("Animation stopped", "anim");
         StartEvent("", "animstop", "StopAvatarAnimSeq", {{"fadeOutTime", "0.2", ""}});
     }
@@ -751,7 +751,7 @@ void PlayerSection(bool inWorld) {
     }
     if (!M.probe.empty()) {
         Dim("%zu bytes found:", M.probe.size());
-        ImGui::InputTextMultiline("##probe", &M.probe[0], M.probe.size() + 1, ImVec2(-1, 300),
+        ImGui::InputTextMultiline("##probe", &M.probe[0], M.probe.size() + 1, ImVec2(-1, Px(300)),
                                   ImGuiInputTextFlags_ReadOnly);
     }
     (void)inWorld;
@@ -773,6 +773,7 @@ void TransformSection() {
             ImGui::PopID();
         }
     }
+    TouchScroll();
     ImGui::EndChild();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
     ImGui::InputTextWithHint("##custom", "another spell id", F.customSpell, sizeof F.customSpell);
@@ -790,7 +791,7 @@ void TransformSection() {
     Dim("Shows your cape at this wing level. Switch off or Reset to get your real level back.");
     bool changed = ImGui::Checkbox("Use this level", &F.capeOn);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(160);
+    ImGui::SetNextItemWidth(Px(160));
     if (ImGui::InputInt("##lvl", &F.capeLevel)) changed = F.capeOn;
     if (F.capeLevel < 0) F.capeLevel = 0;
     int r = SliderInt("cape", &F.capeLevel, 0, 20, 7);
@@ -818,7 +819,7 @@ void TransformSection() {
                                     {"Drop", "DropWingBuffServerRequestEvent"}};
     for (int i = 0; i < 4; i++) {
         if (i) ImGui::SameLine();
-        if (ImGui::Button(kReq[i][0], ImVec2(170, 0)))
+        if (ImGui::Button(kReq[i][0], ImVec2(Px(170), 0)))
             StartEvent(std::string("Winged light request: ") + kReq[i][0], "wingreq", kReq[i][1], {});
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", kReq[i][1]);
     }
@@ -854,7 +855,7 @@ void OutfitsSection() {
         if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.55f));
         if (!DrawIcon(types[i].second, sz)) ImGui::Dummy(ImVec2(sz, sz));
         ImGui::SameLine(0, 4);
-        if (ImGui::Button(types[i].first.c_str(), ImVec2(130, 0))) M.outfitType = types[i].first;
+        if (ImGui::Button(types[i].first.c_str(), ImVec2(Px(130), 0))) M.outfitType = types[i].first;
         if (sel) ImGui::PopStyleColor();
         ImGui::EndGroup();
         ImGui::PopID();
@@ -885,6 +886,7 @@ void OutfitsSection() {
                                {{M.outfitType, Quote(name), ""}});
             }
     }
+    TouchScroll();
     ImGui::EndChild();
     if (ImGui::Button("Back to my outfit")) {
         for (const auto& t : types) StopEvent("", ("outfit_" + t.first).c_str());
@@ -943,6 +945,7 @@ void EmotesSection() {
                 }
             }
     }
+    TouchScroll();
     ImGui::EndChild();
 }
 
@@ -951,7 +954,7 @@ void CameraSection() {
     Slider("shspeed", &M.shakeSpeed, 0.f, 10.f, 1.f, "speed %.2f");
     Slider("shforce", &M.shakeForce, 0.f, 10.f, 1.f, "force %.2f");
     Slider("shtime", &M.shakeTime, 0.f, 60.f, 2.f, "%.1f s");
-    if (ImGui::Button("Shake", ImVec2(200, 0)))
+    if (ImGui::Button("Shake", ImVec2(Px(200), 0)))
         StartEvent("Camera shake", "shake", "SetCameraShake",
                    {{"speed", Num(M.shakeSpeed), ""}, {"force", Num(M.shakeForce), ""}, {"duration", Num(M.shakeTime), ""},
                     {"fadeInDuration", "0.2", ""}, {"fadeOutDuration", "0.5", ""}});
@@ -974,14 +977,14 @@ void CameraSection() {
                     {"changeTime", "0.3", ""}});
     };
     if (ImGui::Checkbox("Colour filter", &M.filter)) applyFilter();
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
     if (ImGui::BeginCombo("##ft", kFilters[M.filterType] + 12)) {
         for (int i = 0; i < 11; i++)
             if (ImGui::Selectable(kFilters[i] + 12, i == M.filterType)) M.filterType = i, applyFilter();
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Reset##ft", ImVec2(130, 0))) M.filterType = 0, M.filter = false, applyFilter();
+    if (ImGui::Button("Reset##ft", ImVec2(Px(130), 0))) M.filterType = 0, M.filter = false, applyFilter();
     if (Slider("famount", &M.filterAmount, 0.f, 1.f, 1.f, "strength %.2f") && M.filter) applyFilter();
     if (ImGui::Checkbox("Invert", &M.filterInvert) && M.filter) applyFilter();
 
@@ -1029,7 +1032,7 @@ void CameraSection() {
     }
     if (!M.lenses.empty()) {
         ImGui::TextUnformatted("Lens (field of view)");
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
         if (ImGui::BeginCombo("##lens", M.lens < 0 ? "level default" : M.lenses[M.lens].c_str())) {
             for (int i = 0; i < (int)M.lenses.size(); i++)
                 if (ImGui::Selectable(M.lenses[i].c_str(), i == M.lens)) {
@@ -1040,7 +1043,7 @@ void CameraSection() {
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Reset##lens", ImVec2(130, 0))) M.lens = -1, StopEvent("Lens back to the level's", "lens");
+        if (ImGui::Button("Reset##lens", ImVec2(Px(130), 0))) M.lens = -1, StopEvent("Lens back to the level's", "lens");
     }
 
     Section("FREE CAMERA (experimental)", "The game's manual camera; it may do nothing in a release build.");
@@ -1105,7 +1108,7 @@ void ShoutSection() {
     ImGui::TextUnformatted("Intensity");
     Slider("intensity", &F.shoutIntensity, 0.f, 5.f, 1.f, "%.2f");
     if (!F.voices.empty()) {
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
         std::string cur = F.voices[F.voice];
         if (ImGui::BeginCombo("##voice", cur.c_str())) {
             for (int i = 0; i < (int)F.voices.size(); i++)
@@ -1113,13 +1116,13 @@ void ShoutSection() {
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Reset##voice", ImVec2(130, 0))) F.voice = 0, F.voiceOn = false, ApplyVoice();
+        if (ImGui::Button("Reset##voice", ImVec2(Px(130), 0))) F.voice = 0, F.voiceOn = false, ApplyVoice();
         Dim("Voice type (temporary; Reset gives you your own voice back).");
     } else {
         Dim("Voice types: not readable from the game yet.");
     }
     Dim("Pitch: the game has no pitch setting for shouts in 0.35.2, so it can't be changed here.");
-    if (ImGui::Button("Shout", ImVec2(200, 0))) Shout();
+    if (ImGui::Button("Shout", ImVec2(Px(200), 0))) Shout();
     ImGui::SameLine();
     ImGui::Checkbox("Repeat", &F.shoutRepeat);
     ImGui::TextUnformatted("Repeat speed (shouts per second)");
@@ -1180,7 +1183,7 @@ void FeaturesTab() {
         if (i % 4) ImGui::SameLine();
         bool sel = gSub == i;
         if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
-        if (ImGui::Button(kSubs[i], ImVec2((ImGui::GetContentRegionAvail().x - 30) / 4, 0)) && !sel) gSub = i;
+        if (ImGui::Button(kSubs[i], ImVec2((ImGui::GetContentRegionAvail().x - Px(30)) / 4, 0)) && !sel) gSub = i;
         if (sel) ImGui::PopStyleColor();
     }
     ImGui::Separator();
@@ -1195,6 +1198,7 @@ void FeaturesTab() {
             case 6: ShoutSection(); break;
         }
     }
+    TouchScroll();
     ImGui::EndChild();
 }
 

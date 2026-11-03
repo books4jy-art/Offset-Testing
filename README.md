@@ -11,6 +11,14 @@ It exists to satisfy curiosity: try things and see what they do. Expect crashes;
 
 Download `libOffsetLab.so` from the [latest release](../../releases/latest) and import it into Canvas as a mod.
 
+## Window
+
+Offset Lab draws its own window (`selfManagedUI`): a **menu button** at the top-left opens and collapses a panel
+docked under it on the left. Everything scales with the screen (text twice the base size on a 1080-pixel-high
+screen); **Size** and **Width** at the top adjust it and are remembered. The scrollbar is TSM-sized (20–40 px on a
+1080-pixel screen), and lists scroll by dragging the content (a vertical drag that starts on a button scrolls
+instead of pressing it). Features that repeat keep running while the panel is collapsed.
+
 ## Tabs
 
 | Tab | What it does |

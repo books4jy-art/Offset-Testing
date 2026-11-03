@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "imgui.h"
+#include "imgui_internal.h"  // ClearActiveID, for drag-to-scroll
 
 namespace lab {
 
@@ -30,24 +31,27 @@ const ImVec4 kAmber300(0.988f, 0.827f, 0.302f, 1.f);
 inline ImVec4 White(float a) { return ImVec4(1.f, 1.f, 1.f, a); }
 inline ImVec4 Sky(float a) { return ImVec4(kSky400.x, kSky400.y, kSky400.z, a); }
 
-void ApplyTheme() {
+// k: how much bigger than the layout's base sizes (1 = the sizes below, made for text at 1.35x)
+void ApplyTheme(float k, float screenK) {
     ImGuiStyle& s = ImGui::GetStyle();
-    s.WindowRounding = 10.f;
-    s.ChildRounding = 8.f;
-    s.FrameRounding = 6.f;
-    s.PopupRounding = 8.f;
-    s.GrabRounding = 6.f;
-    s.TabRounding = 6.f;
-    s.ScrollbarRounding = 8.f;
+    s.WindowRounding = 10.f * k;
+    s.ChildRounding = 8.f * k;
+    s.FrameRounding = 6.f * k;
+    s.PopupRounding = 8.f * k;
+    s.GrabRounding = 6.f * k;
+    s.TabRounding = 6.f * k;
+    s.ScrollbarRounding = 12.f * k;
     s.WindowBorderSize = 1.f;
     s.ChildBorderSize = 1.f;
     s.FrameBorderSize = 1.f;
-    s.ItemSpacing = ImVec2(10.f, 10.f);
-    s.ItemInnerSpacing = ImVec2(8.f, 6.f);
-    s.FramePadding = ImVec2(14.f, 10.f);
-    s.WindowPadding = ImVec2(16.f, 16.f);
-    s.ScrollbarSize = 22.f;
-    s.GrabMinSize = 22.f;
+    s.ItemSpacing = ImVec2(10.f * k, 10.f * k);
+    s.ItemInnerSpacing = ImVec2(8.f * k, 6.f * k);
+    s.FramePadding = ImVec2(14.f * k, 10.f * k);
+    s.WindowPadding = ImVec2(16.f * k, 16.f * k);
+    s.TouchExtraPadding = ImVec2(4.f * k, 4.f * k);
+    // like TSM's (20-40 px on a 1080-pixel-high screen), growing with the screen
+    s.ScrollbarSize = std::max(20.f, std::min(40.f, 34.f * screenK) * std::max(1.f, screenK));
+    s.GrabMinSize = std::max(s.ScrollbarSize, 22.f * k);
     ImVec4* c = s.Colors;
     const ImVec4 bg(0.043f, 0.051f, 0.071f, 1.00f);  // #0b0d12, solid so the game doesn't show through
     c[ImGuiCol_WindowBg] = bg;
@@ -225,7 +229,9 @@ struct State {
     int openTab = -1;
     // view & crash notes (saved next to the mod)
     bool prefsLoaded = false;
-    float textScale = 1.35f;
+    float uiScale = 1.0f;     // the panel's size on top of the screen's (Size slider)
+    float panelWidth = 0.62f; // part of the screen's width the panel takes
+    bool menuOpen = true;
     std::string lastFired;       // from the previous session: last function fired before the game closed
     bool lastFiredShown = false;
     std::vector<std::string> crashed;  // functions marked as crashing the game
@@ -239,7 +245,8 @@ bool IsCrashed(const std::string& name) {
 }
 
 void SavePrefs() {
-    std::string t = "textScale=" + std::to_string(S.textScale) + "\n";
+    std::string t = "uiScale=" + std::to_string(S.uiScale) + "\npanelWidth=" + std::to_string(S.panelWidth) +
+                    "\nmenuOpen=" + std::string(S.menuOpen ? "1" : "0") + "\n";
     for (auto& c : S.crashed) t += "crashed=" + c + "\n";
     WriteTextFile(DataPath("offsetlab_settings.txt"), t);
 }
@@ -253,7 +260,9 @@ void LoadPrefs() {
         size_t b = t.find('\n', a);
         if (b == std::string::npos) b = t.size();
         std::string line = t.substr(a, b - a);
-        if (line.rfind("textScale=", 0) == 0) S.textScale = std::max(0.8f, std::min(2.5f, strtof(line.c_str() + 10, nullptr)));
+        if (line.rfind("uiScale=", 0) == 0) S.uiScale = std::max(0.6f, std::min(2.0f, strtof(line.c_str() + 8, nullptr)));
+        if (line.rfind("panelWidth=", 0) == 0) S.panelWidth = std::max(0.35f, std::min(1.0f, strtof(line.c_str() + 11, nullptr)));
+        if (line.rfind("menuOpen=", 0) == 0) S.menuOpen = line[9] == '1';
         if (line.rfind("crashed=", 0) == 0) S.crashed.push_back(line.substr(8));
         a = b + 1;
     }
@@ -716,13 +725,13 @@ void Details(int i) {
     if (risky) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.25f, 0.25f, 1.f));
-        if (ImGui::Button("Fire anyway", ImVec2(200, 0))) Fire(i);
+        if (ImGui::Button("Fire anyway", ImVec2(Px(200), 0))) Fire(i);
         ImGui::PopStyleColor(2);
-    } else if (AccentButton("Fire", ImVec2(200, 0))) {
+    } else if (AccentButton("Fire", ImVec2(Px(200), 0))) {
         Fire(i);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Stop", ImVec2(140, 0))) Stop(i);
+    if (ImGui::Button("Stop", ImVec2(Px(140), 0))) Stop(i);
     ImGui::SameLine();
     ImGui::Checkbox("Fire on change", &S.fireOnChange);
     if (S.fireOnChange && anyChange && !risky) Fire(i);
@@ -858,12 +867,14 @@ void GameFunctionsTab() {
                 ImGui::PopID();
             }
     }
+    TouchScroll();
     ImGui::EndChild();
 
     if (ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_Border)) {
         if (S.selected >= 0) Details(S.selected);
         else Dim("Pick a game function to see what it does, set it up with toggles, sliders and choices, and fire it.");
     }
+    TouchScroll();
     ImGui::EndChild();
 }
 
@@ -872,7 +883,7 @@ void GameFunctionsTab() {
 void LuaTab() {
     Dim("Runs in the game's Lua, on the game's main thread at its next frame. Errors show in the Log tab.");
     ImGui::InputTextMultiline("##lua", S.lua, sizeof S.lua, ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.55f));
-    if (AccentButton("Run", ImVec2(120, 0))) {
+    if (AccentButton("Run", ImVec2(Px(120), 0))) {
         int rc = RunLua(S.lua, "Lua tab");
         S.luaHistory.insert(S.luaHistory.begin(), std::string(rc == 0 ? "sent  " : rc == -1 ? "not ready  " : "error  ") +
                                                       std::string(S.lua).substr(0, 80));
@@ -885,6 +896,7 @@ void LuaTab() {
     Eyebrow("HISTORY");
     if (ImGui::BeginChild("##hist", ImVec2(0, 0), ImGuiChildFlags_Border))
         for (auto& h : S.luaHistory) ImGui::TextUnformatted(h.c_str());
+    TouchScroll();
     ImGui::EndChild();
 }
 
@@ -893,7 +905,7 @@ void LuaTab() {
 void MemoryTab() {
     uintptr_t base = GameBase();
     Dim("Read-only. Offsets are from the start of libBootloader.so (%s) unless Absolute is on.", Hex(base).c_str());
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(Px(200));
     ImGui::InputTextWithHint("##addr", "hex offset", S.memAddr, sizeof S.memAddr, ImGuiInputTextFlags_CharsHexadecimal);
     ImGui::SameLine();
     ImGui::Checkbox("Absolute", &S.memAbsolute);
@@ -903,7 +915,7 @@ void MemoryTab() {
         S.memAbsolute = true;
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(Px(120));
     ImGui::SliderInt("rows", &S.memRows, 4, 64);
 
     uintptr_t a = 0;
@@ -948,6 +960,7 @@ void MemoryTab() {
             ImGui::TextUnformatted(line);
         }
     }
+    TouchScroll();
     ImGui::EndChild();
 }
 
@@ -981,7 +994,7 @@ void NativeTab() {
     }
 
     if (ImGui::CollapsingHeader("Watch any offset")) {
-        ImGui::SetNextItemWidth(200);
+        ImGui::SetNextItemWidth(Px(200));
         ImGui::InputTextWithHint("##manual", "hex offset", S.manualAddr, sizeof S.manualAddr,
                                  ImGuiInputTextFlags_CharsHexadecimal);
         ImGui::SameLine();
@@ -1019,6 +1032,7 @@ void NativeTab() {
                 ImGui::PopID();
             }
     }
+    TouchScroll();
     ImGui::EndChild();
 }
 
@@ -1029,6 +1043,7 @@ void LogTab() {
         for (auto& l : LogLines()) ImGui::TextWrapped("%s", l.c_str());
         if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
     }
+    TouchScroll();
     ImGui::EndChild();
 }
 
@@ -1036,12 +1051,62 @@ void LogTab() {
 
 void OpenMemoryAt(uint32_t offset) { OpenMemory(offset); }
 
+float gK = 1.f;  // current layout scale, for Px()
+float Px(float v) { return v * gK; }
+
+// Drag the content to scroll (touch): a vertical drag that starts on a button scrolls instead of pressing it.
+void TouchScroll() {
+    if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) return;
+    ImGuiIO& io = ImGui::GetIO();
+    if (!ImGui::IsMouseDown(0)) return;
+    ImVec2 d = ImGui::GetMouseDragDelta(0, 0.f);
+    static bool panning = false;
+    if (!panning && std::fabs(d.y) > Px(14) && std::fabs(d.y) > std::fabs(d.x) * 1.5f) {
+        panning = true;
+        if (ImGui::IsAnyItemActive()) ImGui::ClearActiveID();  // don't press the button the drag started on
+    }
+    if (panning) ImGui::SetScrollY(ImGui::GetScrollY() - io.MouseDelta.y);
+    if (ImGui::IsMouseReleased(0) || !ImGui::IsMouseDown(0)) panning = false;
+}
+
 void Draw(bool* open) {
     (void)open;
     LoadPrefs();
-    ApplyTheme();
-    ImGui::SetWindowSize(ImVec2(1000, 1300), ImGuiCond_FirstUseEver);
-    ImGui::SetWindowFontScale(S.textScale);
+    FeaturesTick();  // repeating features keep going while the panel is collapsed
+    ImGuiStyle saved = ImGui::GetStyle();  // the theme is only for Offset Lab's windows, not Canvas's
+    ImGuiIO& io = ImGui::GetIO();
+    float screenK = std::max(0.5f, std::min(io.DisplaySize.x, io.DisplaySize.y) / 1080.f);
+    float fontScale = 2.0f * screenK * S.uiScale;
+    gK = fontScale / 1.35f;
+    ApplyTheme(gK, screenK);
+    float margin = io.DisplaySize.x * 0.045f;  // clear of the notch and rounded corners
+
+    // the menu button: opens and collapses the panel
+    ImGui::SetNextWindowPos(ImVec2(margin, Px(8)), ImGuiCond_Always);
+    ImGui::Begin("##offsetlab_menu", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::SetWindowFontScale(fontScale);
+    if (AccentButton(S.menuOpen ? "Offset Lab  [-]" : "Offset Lab  [+]")) {
+        S.menuOpen = !S.menuOpen;
+        SavePrefs();
+    }
+    float top = ImGui::GetWindowPos().y + ImGui::GetWindowSize().y + Px(6);
+    ImGui::End();
+    if (!S.menuOpen) {
+        ImGui::GetStyle() = saved;
+        return;
+    }
+
+    // the panel, docked on the left under the button
+    ImGui::SetNextWindowPos(ImVec2(margin, top), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2((io.DisplaySize.x - 2 * margin) * S.panelWidth, io.DisplaySize.y - top - Px(8)),
+                             ImGuiCond_Always);
+    ImGui::Begin("##offsetlab_panel", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::SetWindowFontScale(fontScale);
 
     Eyebrow("SKY MESH LAB");
     ImGui::SameLine();
@@ -1050,8 +1115,12 @@ void Draw(bool* open) {
     ImGui::TextColored(base ? kSky300 : kRed300, "%s", base ? "Game library loaded" : "Game library not found");
     ImGui::SameLine();
     Dim("%s", game ? "· in the world, ready to fire" : "· enter the world to fire game functions");
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-    if (ImGui::SliderFloat("Text size", &S.textScale, 0.8f, 2.5f, "%.2f")) S.textScale = std::max(0.8f, S.textScale);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.3f);
+    ImGui::SliderFloat("Size", &S.uiScale, 0.6f, 2.0f, "%.2f");
+    if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
+    ImGui::SliderFloat("Width", &S.panelWidth, 0.35f, 1.0f, "%.2f");
     if (ImGui::IsItemDeactivatedAfterEdit()) SavePrefs();
     if (!S.lastFired.empty() && !S.lastFiredShown) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.05f, 0.6f));
@@ -1066,11 +1135,11 @@ void Draw(bool* open) {
             ImGui::SameLine();
             if (ImGui::Button("Dismiss")) S.lastFiredShown = true;
         }
+        TouchScroll();
         ImGui::EndChild();
         ImGui::PopStyleColor();
     }
     ImGui::Separator();
-    FeaturesTick();
 
     static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets"};
     static const int kOrder[] = {5, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
@@ -1094,6 +1163,9 @@ void Draw(bool* open) {
         ImGui::EndTabBar();
     }
     S.openTab = -1;
+    TouchScroll();
+    ImGui::End();
+    ImGui::GetStyle() = saved;
 }
 
 }  // namespace lab

@@ -93,5 +93,7 @@ void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders,
 void FeaturesTick();     // features.cpp: repeating actions, every frame
 void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
 void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
+float Px(float v);    // ui.cpp: a size in the layout's base pixels, scaled for the screen and the Size slider
+void TouchScroll();   // ui.cpp: call inside a scrolling window/child: drag the content to scroll
 
 }  // namespace lab

@@ -4,11 +4,11 @@
     "author": "books4jy-art",
     "description": "Sky Mesh Lab: explore Sky 0.35.2's game library. Ready-made features (transform, hover, speed, shout and more), fire any registered game type, run Lua, read memory, watch function calls. Experimental.",
     "majorVersion": 0,
-    "minorVersion": 7,
-    "patchVersion": 4,
+    "minorVersion": 8,
+    "patchVersion": 0,
     "compatibilityGameVersion": "0.35.2",
     "displaysUI": true,
-    "selfManagedUI": false,
+    "selfManagedUI": true,
     "githubReleasesUrl": "https://api.github.com/repos/books4jy-art/Offset-Testing/releases/latest",
     "dependencies": []
 }
