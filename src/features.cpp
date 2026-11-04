@@ -1210,6 +1210,26 @@ int gSub = 0;
 
 }  // namespace
 
+// Recorder: start a recorded event again, through the same path as the features (defaults first, then the values).
+bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std::string>>& values) {
+    IndexTypes();
+    size_t n = 0;
+    const LabType* t = Types(&n);
+    if (typeIndex >= n) return false;
+    std::string name = GameString(t[typeIndex].nameAddr);
+    if (name.empty() || Fnv1a(name) != t[typeIndex].nameHash) {
+        Log("Replay: type #%zu's name doesn't match 0.35.2; not started", typeIndex);
+        return false;
+    }
+    if (EventStatusOf(typeIndex) != kIsEvent) {
+        Log("Replay: %s isn't known to be an event; not started", name.c_str());
+        return false;
+    }
+    std::vector<Set> sets;
+    for (const auto& v : values) sets.push_back({v.first, v.second, ""});
+    return StartEvent("Replay " + name, "", name.c_str(), sets);
+}
+
 // Repeating actions; called every frame from Draw, whichever tab is open.
 void FeaturesTick() {
     if (!GameObject()) return;

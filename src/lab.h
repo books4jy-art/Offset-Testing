@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace lab {
@@ -78,6 +79,32 @@ struct Watch { uintptr_t offset; std::string label; uint64_t calls; uint64_t arg
 bool StartWatch(uintptr_t offset, const std::string& label, std::string& error);
 void StopWatch(uintptr_t offset);
 std::vector<Watch> Watches();
+
+// ---- event recorder (recorder.cpp): every event the game starts, from a hook on its Event start ----
+constexpr size_t kRecRaw = 192;  // bytes of an event's settings kept per start
+struct RecordedEvent {
+    double time;        // RecorderNow() clock, seconds
+    uintptr_t event;    // the event object (only an id: it may be deleted by now, never read through it later)
+    uint32_t metaId;    // the object's meta class id (0xFFFFFFFF = unreadable)
+    int32_t type;       // index into Types(), -1 = unknown
+    uint16_t flags;     // the event's state flags just before it started
+    uint16_t rawLen;    // bytes in raw (0 = no values)
+    uint8_t raw[kRecRaw];  // the event's bytes from its first recorded setting on (decode with RecordedValues)
+};
+struct RecValue { uint32_t setting; std::string name, lua, text; };  // name: the game's setter; lua: as Lua code
+bool RecorderStart(std::string& error);  // places the hook the first time (after checking its code)
+void RecorderStop();
+bool RecorderOn();
+double RecorderNow();
+size_t RecorderDrain(std::vector<RecordedEvent>& out, size_t max);  // UI thread: takes what was recorded
+void RecorderDiscard();                                              // UI thread: drops what wasn't taken yet
+uint64_t RecorderDropped();
+std::string RecorderStatus();
+std::vector<RecValue> RecordedValues(int type, const uint8_t* raw, size_t len);
+int RecordableSettings(int type);  // how many of a type's settings the recorder keeps
+// features.cpp: starts an event the way features do (the game's defaults first, then these name/Lua value pairs).
+// Refuses anything that isn't an event. Not kept: it can't be switched off from the mod.
+bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std::string>>& values);
 
 // ---- small files next to the mod (Canvas's files folder) ----
 std::string DataPath(const char* name);        // "" if the folder can't be found

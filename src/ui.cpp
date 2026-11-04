@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -248,6 +249,30 @@ struct State {
     std::string pendingRisky;          // function waiting for "Fire anyway"
     std::vector<int8_t> evStatus;      // EventStatus per type
     bool eventsOnly = true;
+    // recorder
+    struct RecRow {
+        uint64_t serial;
+        double t, last;     // first and latest start (RecorderNow clock)
+        uint32_t id;        // meta class id
+        int type;           // -1 = unknown
+        uint32_t count;     // consecutive starts with the same values
+        std::string raw;    // the recorded bytes (RecordedValues decodes them)
+    };
+    struct RecStat { uint32_t n = 0; double first = 0, last = 0; };
+    std::deque<RecRow> rec;
+    std::vector<RecStat> recStats;   // per type
+    std::vector<int> recShown;       // indexes into rec after filtering
+    std::vector<int8_t> recMatch;    // per type: matches the filter
+    std::string recFilterUsed = "\x01";
+    bool recDirty = true;
+    bool recHideNoisy = true;
+    bool recWithValues = true;
+    char recFilter[96] = "";
+    double recStart = 0;
+    uint64_t recSerial = 0, recSelected = 0;
+    uint64_t recTotal = 0;
+    std::string recMsg;
+    bool recMsgOk = true;
 } S;
 
 bool IsCrashed(const std::string& name) {
@@ -1056,6 +1081,296 @@ void NativeTab() {
     ImGui::EndChild();
 }
 
+// ---------------------------------------------------------------- Recorder tab
+
+constexpr size_t kRecMaxRows = 20000;
+constexpr double kNoisyPerSecond = 4.0;  // a type started more often than this (over at least 3 s) is "noisy"
+
+bool Noisy(int type) {
+    if (type < 0 || type >= (int)S.recStats.size()) return false;
+    const auto& st = S.recStats[type];
+    return st.n >= 8 && st.n / std::max(3.0, st.last - st.first) > kNoisyPerSecond;
+}
+
+// Takes what the hook recorded; every frame, also while the panel is collapsed, so the hook's ring never fills up.
+void RecorderPump() {
+    static std::vector<RecordedEvent> got;
+    got.clear();
+    if (!RecorderDrain(got, 8192)) return;
+    size_t n = 0;
+    Types(&n);
+    if (S.recStats.size() != n) S.recStats.assign(n, State::RecStat());
+    for (const auto& e : got) {
+        S.recTotal++;
+        if (e.type >= 0 && e.type < (int)n) {
+            auto& st = S.recStats[e.type];
+            if (!st.n) st.first = e.time;
+            st.n++;
+            st.last = e.time;
+        }
+        std::string raw(reinterpret_cast<const char*>(e.raw), std::min<size_t>(e.rawLen, kRecRaw));
+        if (!S.rec.empty()) {
+            auto& b = S.rec.back();
+            if (b.type == e.type && b.id == e.metaId && b.raw == raw) {  // the same again: count it
+                b.count++;
+                b.last = e.time;
+                continue;
+            }
+        }
+        S.rec.push_back({++S.recSerial, e.time, e.time, e.metaId, e.type, 1, std::move(raw)});
+        if (S.rec.size() > kRecMaxRows) S.rec.pop_front();
+    }
+    S.recDirty = true;
+}
+
+std::string RecTitle(const State::RecRow& r) {
+    if (r.type >= 0 && r.type < (int)S.titles.size()) return S.titles[r.type];
+    char b[64];
+    snprintf(b, sizeof b, r.id == 0xFFFFFFFF ? "Unknown event" : "Unknown event (meta class id %u)", r.id);
+    return b;
+}
+
+std::string RecSummary(const std::vector<RecValue>& vals, size_t max) {
+    std::string s;
+    for (size_t k = 0; k < vals.size() && k < max; k++) s += (k ? ", " : "") + vals[k].name + " " + vals[k].text;
+    if (vals.size() > max) s += ", ...";
+    return s;
+}
+
+// Why a row can't be replayed ("" = it can).
+std::string RecBlocked(const State::RecRow& r) {
+    if (r.type < 0 || r.type >= (int)S.evStatus.size()) return "unknown type";
+    if (S.evStatus[r.type] != kIsEvent) return "not known to be an event";
+    size_t n = 0;
+    if (Types(&n)[r.type].area == kAreaServer && !S.serverTypes) return "server type: turn on Server types";
+    if (!GameObject()) return "enter the world first";
+    return "";
+}
+
+void RecReplay(const State::RecRow& r) {
+    std::string why = RecBlocked(r);
+    if (!why.empty()) {
+        S.recMsgOk = false;
+        S.recMsg = "Not replayed: " + why;
+        return;
+    }
+    std::vector<std::pair<std::string, std::string>> sets;
+    if (S.recWithValues)
+        for (auto& v : RecordedValues(r.type, reinterpret_cast<const uint8_t*>(r.raw.data()), r.raw.size()))
+            sets.emplace_back(v.name, v.lua);
+    WriteTextFile(DataPath("offsetlab_last_fired.txt"), S.names[r.type] + "\n");  // for the crash note
+    bool ok = ReplayEvent((size_t)r.type, sets);
+    S.recMsgOk = ok;
+    S.recMsg = ok ? "Replayed " + S.titles[r.type] + (sets.empty() ? "" : " with " + std::to_string(sets.size()) + " recorded values")
+                  : "Couldn't replay " + S.titles[r.type] + " (see Log)";
+}
+
+void RecOpen(const State::RecRow& r) {
+    if (r.type < 0) return;
+    Select(r.type);
+    S.openTab = 0;
+}
+
+void RecSave() {
+    std::string path = DataPath("offsetlab_recording.txt");
+    if (path.empty()) {
+        S.recMsgOk = false;
+        S.recMsg = "Couldn't find the mod's folder to save in";
+        return;
+    }
+    std::string t = "Offset Lab event recording (Sky 0.35.2)\n";
+    char b[256];
+    snprintf(b, sizeof b, "%zu rows, %" PRIu64 " starts%s\n", S.rec.size(), S.recTotal,
+             RecorderDropped() ? " (some were missed: the game started events faster than they were read)" : "");
+    t += b;
+    t += "time (s since Start)  name (readable title)  x count\n    setting = value (as the game had it when it started)\n\n";
+    for (const auto& r : S.rec) {
+        std::string name = r.type >= 0 && r.type < (int)S.names.size() ? S.names[r.type] : "?";
+        snprintf(b, sizeof b, "%10.3f  ", r.t - S.recStart);
+        t += b + name + "  (" + RecTitle(r) + ")";
+        if (r.count > 1) {
+            snprintf(b, sizeof b, "  x%u (until %.3f)", r.count, r.last - S.recStart);
+            t += b;
+        }
+        t += "\n";
+        for (auto& v : RecordedValues(r.type, reinterpret_cast<const uint8_t*>(r.raw.data()), r.raw.size()))
+            t += "    " + v.name + " = " + v.lua + "\n";
+    }
+    bool ok = WriteTextFile(path, t);
+    S.recMsgOk = ok;
+    S.recMsg = ok ? "Saved " + std::to_string(S.rec.size()) + " rows to " + path : "Couldn't write " + path;
+    Log("Recorder: %s", S.recMsg.c_str());
+}
+
+void RecorderTab() {
+    LoadNames();
+    if (!S.namesLoaded) {
+        Dim("Waiting for the game to load...");
+        return;
+    }
+    size_t n = 0;
+    const LabType* types = Types(&n);
+    Dim("Notes every event the game starts while you play (its own and the mod's), with the time and the values of "
+        "its plain settings (toggles, numbers, vectors, colours) as the game had them. Replay starts one again.");
+    Dim("%s", RecorderStatus().c_str());
+
+    bool on = RecorderOn();
+    if (!on) {
+        if (AccentButton("Start", ImVec2(Px(140), 0))) {
+            std::string err;
+            if (RecorderStart(err)) {
+                if (S.rec.empty()) S.recStart = RecorderNow();
+                S.recMsg.clear();
+            } else {
+                S.recMsgOk = false;
+                S.recMsg = "Not started: " + err;
+            }
+        }
+    } else if (ImGui::Button("Stop", ImVec2(Px(140), 0))) {
+        RecorderStop();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear", ImVec2(Px(110), 0))) {
+        S.rec.clear();
+        S.recShown.clear();
+        S.recStats.assign(n, State::RecStat());
+        S.recTotal = 0;
+        S.recSelected = 0;
+        RecorderDiscard();
+        S.recStart = RecorderNow();
+        S.recDirty = true;
+        S.recMsg.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save", ImVec2(Px(110), 0))) RecSave();
+    if (on) {
+        ImGui::SameLine();
+        ImGui::TextColored(kRed300, "Recording");
+    }
+
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##recfilter", "Filter", S.recFilter, sizeof S.recFilter);
+    if (ImGui::Checkbox("Hide noisy", &S.recHideNoisy)) S.recDirty = true;
+    ImGui::SameLine();
+    ImGui::Checkbox("Replay with recorded values", &S.recWithValues);
+    ImGui::Checkbox("Server types", &S.serverTypes);
+    ImGui::SameLine();
+    Dim("(same switch as Game functions; off at every start)");
+
+    // filter: per type, recomputed when the text changes; rows: when anything changed
+    if (S.recFilterUsed != S.recFilter || S.recMatch.size() != n) {
+        S.recFilterUsed = S.recFilter;
+        S.recMatch.assign(n, 0);
+        for (size_t i = 0; i < n; i++)
+            S.recMatch[i] = Contains(S.titles[i], S.recFilter) || Contains(S.names[i], S.recFilter);
+        S.recDirty = true;
+    }
+    int noisyTypes = 0;
+    for (size_t i = 0; i < S.recStats.size(); i++) noisyTypes += Noisy((int)i);
+    if (S.recDirty) {
+        S.recShown.clear();
+        for (int r = 0; r < (int)S.rec.size(); r++) {
+            const auto& row = S.rec[r];
+            if (row.type >= 0 ? !S.recMatch[row.type] : S.recFilter[0] != 0) continue;
+            if (S.recHideNoisy && Noisy(row.type)) continue;
+            S.recShown.push_back(r);
+        }
+        S.recDirty = false;
+    }
+    Dim("%zu shown of %zu rows  ·  %" PRIu64 " starts  ·  %d noisy types (over %.0f starts a second)%s%s", S.recShown.size(),
+        S.rec.size(), S.recTotal, noisyTypes, kNoisyPerSecond, S.recHideNoisy && noisyTypes ? " hidden" : "",
+        RecorderDropped() ? "  ·  some missed" : "");
+    if (!S.recMsg.empty()) ImGui::TextColored(S.recMsgOk ? kSky300 : kRed300, "%s", S.recMsg.c_str());
+
+    const State::RecRow* selected = nullptr;
+    for (const auto& r : S.rec)
+        if (r.serial == S.recSelected) selected = &r;
+
+    float listH = ImGui::GetContentRegionAvail().y * (selected ? 0.60f : 1.f);
+    if (ImGui::BeginChild("##reclist", ImVec2(0, listH), ImGuiChildFlags_Border)) {
+        if (S.recShown.empty())
+            Dim(on ? "Nothing yet: play, and events the game starts show up here." : "Press Start, then play.");
+        bool follow = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.f;  // keep showing the newest
+        ImGuiListClipper clip;
+        clip.Begin((int)S.recShown.size());
+        const State::RecRow* act = nullptr;
+        int action = 0;
+        while (clip.Step())
+            for (int k = clip.DisplayStart; k < clip.DisplayEnd; k++) {
+                const auto& r = S.rec[S.recShown[k]];
+                ImGui::PushID((int)(r.serial & 0x7FFFFFFF));
+                ImGui::TextColored(kSky300, "%8.2f s", r.t - S.recStart);
+                ImGui::SameLine();
+                ImGui::TextUnformatted(RecTitle(r).c_str());
+                if (r.count > 1) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(kAmber300, "x%u", r.count);
+                }
+                auto vals = RecordedValues(r.type, reinterpret_cast<const uint8_t*>(r.raw.data()), r.raw.size());
+                std::string sub = (r.type >= 0 ? S.names[r.type] : std::string("?")) +
+                                  (vals.empty() ? "" : "  ·  " + RecSummary(vals, 3));
+                bool server = r.type >= 0 && types[r.type].area == kAreaServer;
+                ImGui::PushStyleColor(ImGuiCol_Text, server ? kAmber300 : White(0.62f));
+                ImGui::TextUnformatted(sub.c_str());
+                ImGui::PopStyleColor();
+                bool can = RecBlocked(r).empty();
+                if (!can) ImGui::BeginDisabled();
+                if (AccentButton("Replay", ImVec2(Px(120), 0))) act = &r, action = 1;
+                if (!can) ImGui::EndDisabled();
+                ImGui::SameLine();
+                if (r.type < 0) ImGui::BeginDisabled();
+                if (ImGui::Button("Open in Game functions")) act = &r, action = 2;
+                if (r.type < 0) ImGui::EndDisabled();
+                ImGui::SameLine();
+                if (ImGui::Button(r.serial == S.recSelected ? "Hide values" : "Values")) act = &r, action = 3;
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+        if (act && action == 1) RecReplay(*act);
+        if (act && action == 2) RecOpen(*act);
+        if (act && action == 3) S.recSelected = act->serial == S.recSelected ? 0 : act->serial;
+        if (follow && on) ImGui::SetScrollHereY(1.0f);
+    }
+    TouchScroll();
+    ImGui::EndChild();
+
+    if (selected) {
+        if (ImGui::BeginChild("##recdetail", ImVec2(0, 0), ImGuiChildFlags_Border)) {
+            const auto& r = *selected;
+            ImGui::PushStyleColor(ImGuiCol_Text, kSky300);
+            ImGui::TextWrapped("%s", RecTitle(r).c_str());
+            ImGui::PopStyleColor();
+            Dim("%s  ·  started at %.3f s%s", r.type >= 0 ? S.names[r.type].c_str() : "?", r.t - S.recStart,
+                r.count > 1 ? ", again and again after that" : "");
+            auto vals = RecordedValues(r.type, reinterpret_cast<const uint8_t*>(r.raw.data()), r.raw.size());
+            ImGui::Spacing();
+            Eyebrow("RECORDED VALUES");
+            if (vals.empty())
+                Dim("None: this event has no toggle, number, vector or colour settings whose place in the event is "
+                    "known (text, choices and game objects aren't recorded).");
+            for (auto& v : vals) {
+                ImGui::TextUnformatted(Friendly(v.name).c_str());
+                ImGui::SameLine();
+                Dim("%s", v.text.c_str());
+            }
+            if (r.type >= 0) {
+                const LabType& t = types[r.type];
+                int kept = RecordableSettings(r.type);
+                if ((uint32_t)kept < t.settingCount)
+                    Dim("%u other settings aren't recorded; a replay gives them the game's defaults.",
+                        t.settingCount - (uint32_t)kept);
+            }
+            std::string why = RecBlocked(r);
+            if (!why.empty()) ImGui::TextColored(kAmber300, "Replay: %s", why.c_str());
+            if (why.empty() && AccentButton("Replay", ImVec2(Px(140), 0))) RecReplay(r);
+            if (why.empty()) ImGui::SameLine();
+            if (r.type >= 0 && ImGui::Button("Open in Game functions")) RecOpen(r);
+        }
+        TouchScroll();
+        ImGui::EndChild();
+    }
+}
+
 // ---------------------------------------------------------------- Log tab
 
 void LogTab() {
@@ -1095,6 +1410,7 @@ void Draw(bool* open) {
     (void)open;
     LoadPrefs();
     FeaturesTick();  // repeating features keep going while the panel is collapsed
+    RecorderPump();  // the recorder too
     ImGuiStyle saved = ImGui::GetStyle();  // the theme is only for Offset Lab's windows, not Canvas's
     ImGuiIO& io = ImGui::GetIO();
     // TSM's auto-scale
@@ -1213,8 +1529,9 @@ void Draw(bool* open) {
     }
     ImGui::Separator();
 
-    static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets"};
-    static const int kOrder[] = {5, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
+    static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets",
+                                  "Recorder"};
+    static const int kOrder[] = {5, 7, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
     if (ImGui::BeginTabBar("##tabs")) {
         for (int i : kOrder) {
             ImGuiTabItemFlags f = (S.openTab == i) ? ImGuiTabItemFlags_SetSelected : 0;
@@ -1228,6 +1545,7 @@ void Draw(bool* open) {
                     case 4: LogTab(); break;
                     case 5: FeaturesTab(); break;
                     case 6: OtherOffsetsTab(); break;
+                    case 7: RecorderTab(); break;
                 }
                 ImGui::EndTabItem();
             }

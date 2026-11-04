@@ -21,7 +21,7 @@ set_target_properties(ciphered PROPERTIES OUTPUT_NAME ciphered LIBRARY_OUTPUT_DI
 # Export only Dear ImGui from the stand-in (like Canvas's library), so the mod carries its own C++ runtime
 target_link_options(ciphered PRIVATE -Wl,--exclude-libs,ALL)
 
-add_library(OffsetLab SHARED src/main.cpp src/game.cpp src/symbols.cpp src/ui.cpp src/features.cpp)
+add_library(OffsetLab SHARED src/main.cpp src/game.cpp src/symbols.cpp src/ui.cpp src/features.cpp src/recorder.cpp)
 set_target_properties(OffsetLab PROPERTIES OUTPUT_NAME OffsetLab)
 target_include_directories(OffsetLab PRIVATE src ${IMGUI_DIR} third_party/dobby)
 target_compile_options(OffsetLab PRIVATE -O2 -fvisibility=hidden -Wall -Wno-unused-function)

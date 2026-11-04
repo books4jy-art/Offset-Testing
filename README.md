@@ -38,6 +38,7 @@ game ("Invalid meta class id"). Kept events are dropped when the level changes, 
 | Tab | What it does |
 |---|---|
 | **Features** | Ready-made controls, laid out like TheVoid's menu (see below). |
+| **Recorder** | Records every event the game starts while you play (its own and the mod's), with the time and the values it used. **Start / Stop / Clear**, a filter, **Hide noisy** (types started more than 4 times a second, e.g. every frame), and per row: time since Start, readable title, ×count when repeated, **Replay** (starts it again like the features do: the game's defaults, then the recorded values; only events, server types only with *Server types* on) and **Open in Game functions**. **Save** writes `offsetlab_recording.txt` next to the mod (time, name, values; overwritten each time). See *Recorder* below. |
 | **Game functions** | Every type the game registers by name (2,751). Only **events** (types that descend from the game's Event type) can be fired; asking the game to fire anything else makes it abort, so Fire is off for them and *Events only* is on by default. Each is shown with a readable title ("Avatar set inner glow") and the game's name under it. **What it does**: the game's own notes for it and the developers' description of each setting, where they wrote one. **Settings**: each gets the control that fits its type in the game (toggle, slider with typing, whole number, text, x/y/z, colour picker, a choice of the game's own options, or a Lua object), starting at the game's default; only changed settings are sent. Under each setting, **Accepts** says what it takes: the game's own valid range where it gives one (`Tool_MinMaxValues`, 87 settings; sliders and typing are held to it), otherwise its type and a suggested range. Object settings (markers, NPCs, Float nodes…) refuse numbers and text, since the game would use them as objects and crash. Where the game keeps no type for a setting, it's guessed from the name and labelled so. **Fire**, **Fire on change**, **Stop**, **Back / Forward / Recent**. Offsets are under *Offsets*. |
 | **Lua** | Run any Lua in the game. The result is the game's code (0 = no error). |
 | **Memory** | Read-only view of any offset in libBootloader.so (or an absolute address): hex, text and the value as integer, float, double or pointer, with *follow pointer*. Reads never crash: unreadable memory shows `??`. |
@@ -93,6 +94,27 @@ Not yet: shout pitch (0.35.2 has no setting for it), first-person view and unlim
 Icons and the outfit/emote lists come from Canvas's own API (`IconLoader::getUIIcon`, `Cipher::read_asset`,
 declared in `src/canvas_api.h`); nothing from the game is stored in this repository.
 
+### Recorder
+
+- **Hook**: the game's base Event start, `0x1717C8C`: the function the game's Lua `Event:Start` calls (its method record
+  at `0x3192508` points straight at it), that `SetEnabled(true)` tail-calls, and that the game's own code calls when it
+  starts events (1,192 calls and 114 tail calls in the library). It's hooked with Dobby the first time you press Start
+  (never at load), after checking its first four instructions are 0.35.2's; otherwise the recorder refuses and says so
+  in the Log. Stop only stops recording (the hook stays, doing nothing).
+- **Which event**: every game object keeps its meta class id at `+8`; the game checks it against the meta class's id
+  (`+0x38`) when it makes an event. Each type object's `+0x28` points at its meta class, whose ids the game gives out
+  once at start-up, so the mod reads each type's id once when you press Start and looks the event's id up.
+- **Values**: toggles, numbers, whole numbers, x/y, x/y/z, colours and 4-number settings whose place in the event is
+  known (from the game's setting records), read when the event starts, so they're what the game used. Not recorded:
+  text, choices, game objects, settings whose type is only guessed, and values that don't look like their type
+  (they get the game's default on replay).
+- **Safety**: the hook's handler only copies: no memory allocation, locks, logging or Lua. Every read goes through the
+  mod's crash-safe read, into a fixed ring of 4,096 entries that the window empties every frame (also while the panel
+  is collapsed); if the game outruns it, the oldest are dropped and the tab says "some missed". The list keeps the
+  last 20,000 rows; consecutive starts with the same values are counted on one row. The recorded event objects are
+  never read again later (the game may have deleted them). Replayed events aren't kept, so they can't be switched off
+  from the mod.
+
 **Server types** (account, purchases, inventory, friends, requests): fireable only after turning on
 *Server types*, which is off at every start, because they send requests to whatever server the game is connected to.
 
@@ -109,7 +131,7 @@ declared in `src/canvas_api.h`); nothing from the game is stored in this reposit
   tell events from everything else; parents not resolvable from the file are read at runtime from the type object
   (+0x30).
 - Game addresses used: game object pointer `0x33A5E80`, its Lua state at `+0x20`, the game's Lua runner `0x29ADFA4`,
-  the per-frame function where Lua runs `0x17BB458`.
+  the per-frame function where Lua runs `0x17BB458`, the Event start the Recorder hooks `0x1717C8C`.
 
 ## Building
 
