@@ -242,6 +242,7 @@ struct State {
     float scrollbarPx = 40.f;  // scrollbar width
     float handleY = 0.08f;     // the Lab handle: where along the edge (0 top - 1 bottom)
     bool dockRight = true;     // which side the handle and the panel are on
+    bool featuresTabsCollapsed = false;  // Features: sub-tab buttons folded into one header line
     bool handleDragging = false;
     std::string lastFired;       // from the previous session: last function fired before the game closed
     bool lastFiredShown = false;
@@ -283,7 +284,8 @@ void SavePrefs() {
     std::string t = "uiScale=" + std::to_string(S.uiScale) + "\npanelWidthDp=" + std::to_string(S.panelWidthDp) +
                     "\nmenuOpen=" + std::string(S.menuOpen ? "1" : "0") + "\nscrollbarPx=" +
                     std::to_string(S.scrollbarPx) + "\nhandleY=" + std::to_string(S.handleY) +
-                    "\ndockRight=" + std::string(S.dockRight ? "1" : "0") + "\n";
+                    "\ndockRight=" + std::string(S.dockRight ? "1" : "0") +
+                    "\nfeaturesTabsCollapsed=" + std::string(S.featuresTabsCollapsed ? "1" : "0") + "\n";
     for (auto& c : S.crashed) t += "crashed=" + c + "\n";
     WriteTextFile(DataPath("offsetlab_settings.txt"), t);
 }
@@ -303,6 +305,7 @@ void LoadPrefs() {
         if (line.rfind("scrollbarPx=", 0) == 0) S.scrollbarPx = std::max(20.f, std::min(80.f, strtof(line.c_str() + 12, nullptr)));
         if (line.rfind("handleY=", 0) == 0) S.handleY = std::max(0.f, std::min(1.f, strtof(line.c_str() + 8, nullptr)));
         if (line.rfind("dockRight=", 0) == 0) S.dockRight = line[10] == '1';
+        if (line.rfind("featuresTabsCollapsed=", 0) == 0) S.featuresTabsCollapsed = line[22] == '1';
         if (line.rfind("crashed=", 0) == 0) S.crashed.push_back(line.substr(8));
         a = b + 1;
     }
@@ -1404,6 +1407,18 @@ void TouchScroll() {
     }
     if (panning) ImGui::SetScrollY(ImGui::GetScrollY() - io.MouseDelta.y);
     if (ImGui::IsMouseReleased(0) || !ImGui::IsMouseDown(0)) panning = false;
+}
+
+bool FeaturesTabsCollapsed() {
+    LoadPrefs();
+    return S.featuresTabsCollapsed;
+}
+
+void SetFeaturesTabsCollapsed(bool collapsed) {
+    LoadPrefs();
+    if (S.featuresTabsCollapsed == collapsed) return;
+    S.featuresTabsCollapsed = collapsed;
+    SavePrefs();
 }
 
 void Draw(bool* open) {

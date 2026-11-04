@@ -68,6 +68,9 @@ uintptr_t GameObject();                      // the game's main object (0 when n
 // placed, runs directly and returns the game's result code (0 = ok).
 // key: jobs with the same key replace each other while waiting, and run at least 0.15 s apart.
 int RunLua(const std::string& script, const std::string& what = "", const std::string& key = "");
+// Calls fn(arg) on the game's main thread, at the start of its next frame (the same hook as Lua). False when the
+// hook isn't placed (then nothing is called: native calls never run on the window's thread) or 8 calls wait.
+bool RunOnGameThread(void (*fn)(uintptr_t), uintptr_t arg);
 std::string LuaStatus();  // where Lua runs and how many scripts wait
 
 // ---- exported functions (read from the game's own symbol table) ----
@@ -125,5 +128,7 @@ void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
 float Px(float v);
 float Dp(float v);    // ui.cpp: TSM's dp (1.6667 px x the panel scale)    // ui.cpp: a size in the layout's base pixels, scaled for the screen and the Size slider
 void TouchScroll();   // ui.cpp: call inside a scrolling window/child: drag the content to scroll
+bool FeaturesTabsCollapsed();                   // ui.cpp: the Features sub-tab buttons folded (saved in the prefs)
+void SetFeaturesTabsCollapsed(bool collapsed);
 
 }  // namespace lab

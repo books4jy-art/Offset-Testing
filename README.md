@@ -19,6 +19,7 @@ panel's inner edge (on the screen edge when collapsed); drag it up or down to mo
 the panel on the other side. **Display** (top of the panel) has Size, Width and Scrollbar (default 40 px, 20–80). Sizes are TSM's, in dp
 (1.6667 px × TSM's auto-scale, which fits its 430×545 dp layout into 75% × 80% of the screen, at most 1): 12 dp
 margins, rows at least 36 dp high, 44 dp sub-tab buttons, text 15 dp high. **Size** scales it all.
+The Features tab's sub-tab buttons fold into one 44 dp header line showing the current sub-tab and an arrow: tap it to open or close the button grid; picking a sub-tab folds it again. Whether it is folded is saved with the other settings (`featuresTabsCollapsed` in `offsetlab_settings.txt`).
 Lists scroll by dragging the content (a vertical drag that starts on a button scrolls instead of pressing it).
 Features that repeat keep running while the panel is collapsed.
 
@@ -59,7 +60,7 @@ switched off with `SetEnabled(false)`: events have only `Start`, `SetEnabled` an
 `Stop`) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
 **Reset**, which puts the game's normal behaviour back. All local to your game.
 
-The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera, World, Social, Shout.
+The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera, World, Teleport, Social, Shout (the Social sub-tab: speak to all, read all messages, take out candle, show others, force light / unlight all, offer emotes, friendship tree).
 
 | Feature | Control | Uses (0.35.2) |
 |---|---|---|
@@ -102,10 +103,16 @@ The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera,
 | Dye menu (Items) | button | the game's `OpenCraftingMenu(game)` (the dye station menu, anywhere). Not a toggle: nothing closes it from outside; dyeing there is real |
 | Spawn closet (Items, experimental) | Spawn / Remove | `OutfitSelect` as a closet with no region, its button marker put at the camera by `GetCameraTransform` once and dropped to the floor |
 | Bucket brigade (Items) | disabled | not possible yet: the bucket is a prop event (`Bucket`, an `AvatarPropEvent`) that needs an equipped bucket prop |
-| Candle (Items, experimental) | Red candle, White candle, Put away | Red: `AvatarSetCandleState` with `state` = `kAvatarCandleFlameState_On` (the game takes out your own player candle; a one-shot), after an Off so a white one is replaced. White: `SocialGift` with no friend chosen (the game puts the candle away and takes out the premium, white candle; nothing is sent or spent). Put away: `AvatarSetCandleState` with `kAvatarCandleFlameState_Off` |
-| Audience mode (Social, experimental) | toggle | `AudienceSettings` (reaction menu, no reservation); off: the neutral settings for a moment, then switched off |
-| Read all messages (Social) | toggle | the chat bubble's "may show text" value: `mov w22, wzr` at `0x1478CB0` and `orr w22, w0, w8` at `0x1478CE4` become `mov w22, #1` (each word checked first); off: both put back |
 | Speak to all (Social, experimental) | text + Send | `AvatarSpeak` (`message`; a one-shot) |
+| Read all messages (Social) | toggle | the chat bubble's "may show text" value: `mov w22, wzr` at `0x1478CB0` and `orr w22, w0, w8` at `0x1478CE4` become `mov w22, #1` (each word checked first); off: both put back |
+| Take out candle (Social, experimental) | Red candle, White candle, Put away | Red: `AvatarSetCandleState` with `state` = `kAvatarCandleFlameState_On` (the game takes out your own player candle; a one-shot), after an Off so a white one is replaced. White: `SocialGift` with no friend chosen (the game puts the candle away and takes out the premium, white candle; nothing is sent or spent). Put away: `AvatarSetCandleState` with `kAvatarCandleFlameState_Off` |
+| Show others client side (Social) | toggle | the ghost fade of every avatar (`0x120F73C`) clamps its amount with `fmov s2, #1.0` at `0x120FA00`; it becomes `movi d2, #0`, so hidden, faded and unlit-looking players are drawn normally (your screen only). Off: the word put back |
+| Force light all (Social) | toggle | your screen: the unlit check reads the game's unlit-players switch (`ldrb w12` at `0x11A048C`, switch byte `0x312F4B4`); it becomes `mov w12, wzr`, so nobody is marked unlit (avatar state bit 0, halfword at avatar `+0x10A0C`). Off: the word put back |
+| … also light them for real (Social, server switch) | checkbox under Force light all | others see it: the game's own light-a-player function (`0x11A84D4`: avatar, Game `+0x6B0`), the one the candle calls when two flames touch (`0x18703BC`) and `OrbitHandholdingScene` calls for every unlit avatar (`0x11FC460`). Called on the game's main thread (frame hook) for one player every 0.5 s: other players in the level that aren't your own avatar, are in the level (bit 3), weren't lit before (bit 2, bit 14) and haven't been sent a light (`+0x10A78`; the game sends each light once). Off: stops; lights already given stay, as in the game |
+| Unlight all (Social) | toggle | your screen only (the game has no way to take light away for others): `cbz w12` at `0x11A0498` becomes a NOP and `eor w8, w10, #1` at `0x11A04AC` becomes `mov w8, #1`, so every other player in the level is marked unlit; your own avatar stays out (the `csel` at `0x11A04B4`). Switches Show others and Force light off. Off: both words put back |
+| Offer emotes (Social) | disabled buttons with the game's icons | not possible from the mod yet: offers are sent only by the game's player menu for the player you tap (`0x1D7A838`), and the `Social…` events take no player from Lua. With Unlock friendship tree on, use the game's menu |
+| Unlock friendship tree (Social, client side) | toggle | the friendship level (`0x24A92F8`, Game `+0x830` → `+0x10`): `ldr w0, [x0, #4]` at `0x24A9390` becomes `mov w0, #levels` and `cbz x0` at `0x24A938C` a NOP, `levels` being the size of the game's own tier list (read each 2 s; more aborts the game at `0x24AF7FC`). The menu then shows every ability unlocked (`trust_error_tier_locked` check, `0x1D775A0`). The server and the other player still decide. Off: both words put back |
+| Audience mode (Social, experimental) | toggle | `AudienceSettings` (reaction menu, no reservation); off: the neutral settings for a moment, then switched off |
 | Unlock all (Social, local only) | toggle | the game's "has unlock" check (`0xDFC144`): its branch to the second lookup (`cbz x0` at `0xDFC174`) becomes a NOP so it always returns yes. The server still decides anything it checks. Off: the instruction put back |
 
 Not yet: shout pitch (0.35.2 has no setting for it), first-person view and unlimited zoom

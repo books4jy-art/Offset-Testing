@@ -252,7 +252,21 @@ double NowSeconds() {
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
+// Native calls into the game (RunOnGameThread): a few fixed slots, run in the frame hook like Lua.
+struct NativeCall { void (*fn)(uintptr_t); uintptr_t arg; };
+NativeCall gNative[8];
+size_t gNativeCount = 0;
+
 void OnFrame(void*, DobbyRegisterContext*) {
+    NativeCall calls[8];
+    size_t ncalls = 0;
+    {
+        std::lock_guard<std::mutex> lk(gJobMutex);
+        ncalls = gNativeCount;
+        for (size_t i = 0; i < ncalls; i++) calls[i] = gNative[i];
+        gNativeCount = 0;
+    }
+    for (size_t i = 0; i < ncalls; i++) calls[i].fn(calls[i].arg);
     std::deque<Job> jobs;
     {
         std::lock_guard<std::mutex> lk(gJobMutex);
@@ -303,6 +317,20 @@ std::string LuaStatus() {
     else if (gHook == -1) snprintf(b, sizeof b, "Lua: direct (frame hook not placed; see Log)");
     else snprintf(b, sizeof b, "Lua: not used yet");
     return b;
+}
+
+bool RunOnGameThread(void (*fn)(uintptr_t), uintptr_t arg) {
+    if (gHook == 0) InstallFrameHook();
+    if (gHook != 1 || !GameObject()) return false;  // never from this thread: only in the game's frame
+    std::lock_guard<std::mutex> lk(gJobMutex);
+    for (size_t i = 0; i < gNativeCount; i++)
+        if (gNative[i].fn == fn) {  // still waiting: replaced, one call per function per frame
+            gNative[i].arg = arg;
+            return true;
+        }
+    if (gNativeCount >= 8) return false;
+    gNative[gNativeCount++] = {fn, arg};
+    return true;
 }
 
 int RunLua(const std::string& script, const std::string& what, const std::string& key) {

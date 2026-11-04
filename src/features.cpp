@@ -1583,8 +1583,195 @@ void ItemsSection() {
                 "The bucket is a prop event (Bucket, an AvatarPropEvent) that the game starts from an equipped bucket "
                 "prop; started from Lua there's no prop for it to act on, and your own prop couldn't be put back "
                 "exactly when switched off.");
+}
 
-    Section("CANDLE", "Holds your candle out, as if you held the candle button, to light candles and other players "
+// ---------------------------------------------------------------- Social: players' light and the friendship tree
+//
+// Avatars (AvatarBarn at Game +0x318): avatar i is barn + 0x30 + i * 0x10CF0 (0x11AF570), i = 0..58 (the loop at
+// 0x11FC40C stops at 0x3B). Per avatar: byte +0xB870 bit 0 = your own avatar (GetLocalAvatar 0x11B2BC4 checks it);
+// halfword +0x10A0C = state bits: bit 0 = unlit (drawn as the grey ghost body "CharSkyKid_Body_Ghost", 0x120F7A0),
+// bit 2 = lit before (sticky, 0x11A0464..0x11A0484), bit 3 = in the level (IsActive 0x119E948), bit 14 = lit by the
+// game's light call, bit 15 = skipped by the game; byte +0x10A78 = the light was already sent (0x11A853C).
+constexpr uintptr_t kGameAvatarBarnOff = 0x318;  // Game +0x318: AvatarBarn (as in teleport.cpp)
+constexpr uintptr_t kBarnAvatars = 0x30;
+constexpr uintptr_t kAvatarStride = 0x10CF0;
+constexpr int kAvatarSlots = 0x3B;
+constexpr uintptr_t kAvLocal = 0xB870;
+constexpr uintptr_t kAvState = 0x10A0C;
+constexpr uintptr_t kAvGone1 = 0x10A10, kAvGone2 = 0x10A12;  // IsActive: both 0
+constexpr uintptr_t kAvLightSent = 0x10A78;
+constexpr uint32_t kCharcoalSwitch = 0x312F4B4;  // the game's "unlit players" switch (read at 0x11A048C)
+constexpr uintptr_t kGameEventBarn = 0x6B0;       // what the game passes to its light call (0x18703B8, 0x11FC458)
+// The game's own "light this player" (0x11A84D4, avatar, event barn): clears bit 0, sets bit 14 and, the first time
+// (+0x10A78), starts the game's networked light event for that player. Called by the candle when two flames touch
+// (0x18703BC, after its distance checks) and by OrbitHandholdingScene for every unlit avatar in the level (0x11FC460).
+constexpr uint32_t kLightAvatarFn = 0x11A84D4;
+constexpr uint32_t kLightAvatarFirst[4] = {0xD10103FF, 0xA9017BFD, 0xF90013F5, 0xA9034FF4};
+
+// Show others: the ghost fade (0x120F73C, per avatar) clamps its amount with fmov s2, #1.0 at 0x120FA00; with
+// movi d2, #0 the amount is always 0, so hidden, blocked-looking and unlit players are drawn normally.
+const CodePatch kRevealPatch = {"Show others", 0x120FA00, 0x1E2E1002u /* fmov s2, #1.0 */, 0x2F00E402u /* movi d2, #0 */};
+// Force light (your screen): the unlit check reads the game's switch (ldrb w12, [x11, #0x4b4] at 0x11A048C); reading
+// 0 instead (mov w12, wzr) means nobody is marked unlit on your device.
+const CodePatch kNoCharcoalPatch = {"Force light", 0x11A048C, 0x3952D16Cu, 0x2A1F03ECu /* mov w12, wzr */};
+// Unlight (your screen): the switch check (cbz w12 at 0x11A0498) becomes a NOP and "not lit before"
+// (eor w8, w10, #1 at 0x11A04AC) becomes 1, so every other player in the level is marked unlit; your own avatar and
+// the ones the game skips (local byte, bit 15) are still left out by the csel at 0x11A04B4.
+const CodePatch kUnlightPatches[2] = {
+    {"Unlight all", 0x11A0498, 0x3400010Cu /* cbz w12, #0x11a04b8 */, kNop},
+    {"Unlight all", 0x11A04AC, 0x52000148u /* eor w8, w10, #1 */, 0x52800028u /* mov w8, #1 */},
+};
+// Friendship tree: the friendship level of a player (0x24A92F8, reached through Game +0x830 -> +0x10; 0x24A4FE8 is
+// its wrapper) ends with cbz x0 / ldr w0, [x0, #4] (0x24A938C / 0x24A9390: the friend's level, 0 for strangers). The
+// menu locks an ability when its level (+0x2FC) is above it ("trust_error_tier_locked", 0x1D775A0). Patched: the
+// ldr becomes mov w0, #levels (the number of levels in the game's tier list) and the cbz a NOP. Never more than the
+// list holds: 0x24AF7FC / 0x24AE580 abort the game for a level past the end.
+constexpr uint32_t kTierAt[2] = {0x24A938C, 0x24A9390};
+constexpr uint32_t kTierOriginal[2] = {0xB4000040u /* cbz x0, #0x24a9394 */, 0xB9400400u /* ldr w0, [x0, #4] */};
+constexpr uintptr_t kGameRelationship = 0x830;
+
+struct Social {
+    bool reveal = false, forceLight = false, unlight = false, tree = false;
+    bool lightReal = false;     // Force light: also the game's networked light, one player at a time
+    double lightNext = 0;
+    int lightSlot = 0;          // next avatar slot to look at
+    int lit = 0;                // players lit this time
+    int treeLevels = 0;         // the level written into the patch (0 = not patched)
+    double treeCheck = 0;
+} SO;
+
+template <class V> bool Rd(uintptr_t a, V& v) { return ReadMemory(a, &v, sizeof v); }
+
+// A pair of code patches as one: both or neither (the first put back when the second fails). Each word keeps the
+// game safe on its own, in the order they're written.
+bool SetPatchPair(const CodePatch* p, bool on) {
+    const CodePatch& first = on ? p[0] : p[1];
+    const CodePatch& second = on ? p[1] : p[0];
+    if (!SetCodePatch(first, on)) return false;
+    if (!SetCodePatch(second, on)) {
+        SetCodePatch(first, !on);
+        return false;
+    }
+    return true;
+}
+
+// Number of friendship levels in the game's tier list ([[[rel +8] +0x810] +0x241F0], a vector of pointers: 0x24C281C,
+// loaded when +0x16C is set: 0xEDE040). 0 when it can't be read.
+int TreeLevels() {
+    uintptr_t game = GameObject(), r830 = 0, rel = 0, q = 0, obj = 0, begin = 0, end = 0;
+    uint32_t loaded = 0;
+    if (!game || !Rd(game + kGameRelationship, r830) || !r830 || !Rd(r830 + 0x10, rel) || !rel || !Rd(rel + 8, q) ||
+        !q || !Rd(q + 0x810, obj) || !obj || !Rd(obj + 0x16C, loaded) || !loaded || !Rd(obj + 0x241F0, begin) ||
+        !Rd(obj + 0x241F8, end) || !begin || end < begin || (end - begin) % 8)
+        return 0;
+    size_t n = (end - begin) / 8;
+    return n >= 1 && n <= 64 ? (int)n : 0;
+}
+
+// levels > 0: patched to report that level; 0: the game's code back. The order keeps every moment safe: on, the
+// ldr is replaced first (strangers still return 0 through the cbz); off, the cbz comes back first.
+bool SetTree(int levels) {
+    uint32_t cur[2] = {0, 0};
+    if (!GameBase() || !ReadMemory(GameBase() + kTierAt[0], cur, sizeof cur)) return false;
+    bool w0ok = cur[0] == kTierOriginal[0] || cur[0] == kNop;
+    bool w1ok = cur[1] == kTierOriginal[1] || (cur[1] & 0xFFE0001F) == 0x52800000u;
+    if (!w0ok || !w1ok) {
+        Log("Friendship tree: the game code at 0x%X isn't what 0.35.2 has; not changed", kTierAt[0]);
+        return false;
+    }
+    if (levels > 0) {
+        uint32_t mov = 0x52800000u | ((uint32_t)levels << 5);  // mov w0, #levels
+        if (!WriteGameMemory(kTierAt[1], &mov, 4) || !WriteGameMemory(kTierAt[0], &kNop, 4)) {
+            WriteGameMemory(kTierAt[0], &kTierOriginal[0], 4);
+            WriteGameMemory(kTierAt[1], &kTierOriginal[1], 4);
+            return false;
+        }
+    } else {
+        bool ok = WriteGameMemory(kTierAt[0], &kTierOriginal[0], 4);
+        ok &= WriteGameMemory(kTierAt[1], &kTierOriginal[1], 4);
+        return ok;
+    }
+    return true;
+}
+
+// Whether avatar slot i is another player the game would show unlit and hasn't lit yet (the conditions of the game's
+// own loop at 0x11FC40C, plus "not lit before" and "light not sent yet"). Reads only.
+bool LightCandidate(uintptr_t barn, int i, uintptr_t* avOut) {
+    if (i < 0 || i >= kAvatarSlots) return false;
+    uintptr_t av = barn + kBarnAvatars + (uintptr_t)i * kAvatarStride;
+    uint8_t local = 1, gone1 = 1, gone2 = 1, sent = 1;
+    uint16_t st = 0;
+    if (!Rd(av + kAvLocal, local) || !Rd(av + kAvState, st) || !Rd(av + kAvGone1, gone1) || !Rd(av + kAvGone2, gone2) ||
+        !Rd(av + kAvLightSent, sent))
+        return false;
+    if ((local & 1) || gone1 || gone2 || sent || (st & 0x8000) || !(st & 8) || (st & 4) || (st & 0x4000)) return false;
+    if (avOut) *avOut = av;
+    return true;
+}
+
+// Runs on the game's main thread (RunOnGameThread): checks everything again, then calls the game's light function
+// exactly as its own callers do.
+void LightOnGameThread(uintptr_t slot) {
+    uintptr_t base = GameBase(), game = GameObject(), barn = 0, evb = 0, av = 0;
+    uint32_t first[4] = {0, 0, 0, 0};
+    uint8_t charcoal = 0;
+    if (!base || !game || !Rd(game + kGameAvatarBarnOff, barn) || !barn || !Rd(game + kGameEventBarn, evb) || !evb)
+        return;
+    if (!ReadMemory(base + kLightAvatarFn, first, sizeof first) || memcmp(first, kLightAvatarFirst, sizeof first))
+        return;
+    if (!ReadMemory(base + kCharcoalSwitch, &charcoal, 1) || charcoal != 1) return;
+    if (!LightCandidate(barn, (int)slot, &av)) return;
+    using LightFn = void (*)(uintptr_t, uintptr_t);
+    reinterpret_cast<LightFn>(base + kLightAvatarFn)(av, evb);
+}
+
+void SetReveal(bool on) {
+    if (SetCodePatch(kRevealPatch, on)) Log("Show others %s", on ? "on" : "off");
+    else SO.reveal = !on;
+}
+
+void SetForceLight(bool on) {
+    if (SetCodePatch(kNoCharcoalPatch, on)) Log("Force light all %s", on ? "on" : "off");
+    else SO.forceLight = !on;
+    SO.lightNext = 0;
+    SO.lit = 0;
+    if (!SO.forceLight) SO.lightReal = false;
+}
+
+void SetUnlight(bool on) {
+    if (SetPatchPair(kUnlightPatches, on)) Log("Unlight all %s", on ? "on" : "off");
+    else SO.unlight = !on;
+}
+
+// Offer emotes: the game's friendship abilities, with their icons (shown, not sent: see the reason below).
+struct Ability { const char* label; const char* icon; };
+const Ability kAbilities[] = {
+    {"Hold hands", "UiSocialHoldHands"}, {"High five", "UiSocialHighFive"}, {"Hug", "UiSocialHug"},
+    {"Carry", "UiSocialCarryA"},         {"Playfight", "UiSocialPlayfight"}, {"Fist bump", "UiSocialFistBump"},
+    {"Side hug", "UiSocialSideHugA"},    {"Bear hug", "UiEmoteSocialBearHug"}, {"Hair tousle", "UiSocialHairTousleA"},
+    {"Handshake", "UiSocialHandShakeA"}, {"Duet dance", "UiSocialDuetDanceA"}, {"Follow", "UiSocialFollow"},
+};
+
+void SocialSection() {
+    Section("SOCIAL", nullptr);
+    ImGui::TextUnformatted("Speak to all");
+    Dim("Says this over your avatar, like the developers' interview messages (AvatarSpeak). Experimental: who else "
+        "sees it is up to the game and your server.");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
+    ImGui::InputTextWithHint("##speak", "message", X.speak, sizeof X.speak);
+    ImGui::SameLine();
+    if (ImGui::Button("Send", ImVec2(Px(130), 0)) && X.speak[0])
+        StartEvent(std::string("Said: ") + X.speak, "speak", "AvatarSpeak",
+                   {{"message", Quote(X.speak), ""}, {"localizeMessage", "false", ""}});
+    if (Toggle("Read all messages", &X.readAll,
+               "Shows the text of chat from people you haven't befriended (and tables you're not at) instead of "
+               "\"...\": the chat bubble's \"may show text\" check (0x1478CB0, 0x1478CE4) always says yes. Your screen "
+               "only. Off: the game's code put back.")) {
+        if (!SetPatchPair(kReadPatches, X.readAll)) X.readAll = !X.readAll;
+        else Log("Read all messages %s", X.readAll ? "on" : "off");
+    }
+
+    Section("TAKE OUT CANDLE", "Holds your candle out, as if you held the candle button, to light candles and other players "
             "or to stand with a friend. Put away ends it (your normal candle button works as always).");
     float cw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
     if (ImGui::Button("Red candle", ImVec2(cw, 0))) {
@@ -1606,36 +1793,94 @@ void ItemsSection() {
         "(SocialGift with no friend chosen: nothing is sent or spent; it needs at least one candle, with none the "
         "game may open its candle menu). Put away: AvatarSetCandleState, state Off. Experimental: what other "
         "players see is up to the game.");
-}
 
-void SocialSection() {
-    Section("SOCIAL", nullptr);
+    Section("PLAYERS", "On your screen unless a row says otherwise. Show others and Force light can be on together; "
+            "Unlight all switches both off (they'd undo it).");
+    if (Toggle("Show others client side", &SO.reveal,
+               "Hidden, faded and unlit-looking players are drawn normally, for you only: the game's ghost fade "
+               "(0x120FA00) always stays at 0. Off: the game's code put back.")) {
+        if (SO.reveal && SO.unlight) SO.unlight = false, SetUnlight(false);
+        SetReveal(SO.reveal);
+    }
+    if (Toggle("Force light all", &SO.forceLight,
+               "Everyone in the level appears lit to you: the game's unlit check (0x11A048C) reads its switch as off. "
+               "While on, the game's own candle-touch lighting doesn't start (nobody counts as unlit). Off: the game's "
+               "code put back (unlit players look unlit again).")) {
+        if (SO.forceLight && SO.unlight) SO.unlight = false, SetUnlight(false);
+        SetForceLight(SO.forceLight);
+    }
+    ImGui::Indent(ImGui::GetFrameHeight() + 8);
+    ImGui::BeginDisabled(!SO.forceLight || !M.server);
+    ImGui::Checkbox("Also light them for real (others see it)", &SO.lightReal);
+    ImGui::EndDisabled();
+    Dim("Needs Force light all and the server switch (Transform > Winged light). Calls the game's own light-a-player "
+        "function (0x11A84D4, the one your candle calls when flames touch and that a game scene calls for everyone "
+        "in the level) for each player the game would show unlit, one every 0.5 s; the game sends each light once. "
+        "Switching off stops it; a light already given stays (as in the game).%s",
+        M.server ? "" : " The server switch is off.");
+    if (SO.lightReal && SO.forceLight && M.server) Dim("Lights sent to the game this time: %d", SO.lit);
+    ImGui::Unindent(ImGui::GetFrameHeight() + 8);
+    if (Toggle("Unlight all", &SO.unlight,
+               "Only on your screen: the game has no way to take light away from someone for others. Every other "
+               "player in the level is marked unlit on your device (0x11A0498, 0x11A04AC). Off: the game's code put "
+               "back.")) {
+        if (SO.unlight) {
+            if (SO.reveal) SO.reveal = false, SetReveal(false);
+            if (SO.forceLight) SO.forceLight = false, SO.lightReal = false, SetForceLight(false);
+        }
+        SetUnlight(SO.unlight);
+    }
+
+    Section("OFFER EMOTES", nullptr);
+    ImGui::BeginDisabled();
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    for (size_t i = 0; i < IM_ARRAYSIZE(kAbilities); i++) {
+        if (i % 2) ImGui::SameLine();
+        ImGui::PushID((int)i);
+        ImGui::BeginGroup();
+        float sz = ImGui::GetFrameHeight();
+        if (!DrawIcon(kAbilities[i].icon, sz)) ImGui::Dummy(ImVec2(sz, sz));
+        ImGui::SameLine();
+        ImGui::Button(kAbilities[i].label, ImVec2(bw - sz - ImGui::GetStyle().ItemSpacing.x, 0));
+        ImGui::EndGroup();
+        ImGui::PopID();
+    }
+    ImGui::EndDisabled();
+    ImGui::TextColored(kAmber300, "Not possible from the mod yet.");
+    Dim("The game sends these offers only from its own player menu, for the player you tap (the menu's request "
+        "code, 0x1D7A838); the Social* events take no player from Lua. Use Unlock friendship tree below, then tap a "
+        "player and pick the ability there: that's the game's real request, which they can accept or decline.");
+
+    Section("FRIENDSHIP TREE", nullptr);
+    if (Toggle("Unlock friendship tree (client side)", &SO.tree,
+               "Every player counts as fully befriended on your device, so the player menu shows every ability "
+               "unlocked: the game's friendship level (0x24A92F8) reports the top level of its own tier list. Your "
+               "screen only: the other player's game and the server still decide. Off: the game's code put back.")) {
+        if (SO.tree) {
+            int n = TreeLevels();
+            if (n <= 0) {
+                Log("Friendship tree: the game's tier list isn't loaded (enter the world, open a friend's menu once)");
+                SO.tree = false;
+            } else if (SetTree(n)) {
+                SO.treeLevels = n;
+                SO.treeCheck = ImGui::GetTime() + 2.0;
+                Log("Friendship tree unlocked (%d levels)", n);
+            } else {
+                SO.tree = false;
+            }
+        } else {
+            if (SetTree(0)) SO.treeLevels = 0, Log("Friendship tree back to normal");
+            else SO.tree = true;
+        }
+    }
+    if (SO.tree) Dim("Reporting level %d.", SO.treeLevels);
+    Dim("Not used: TSM's \"enable all relationship abilities\" byte (0x3455E25). Its readers (0x1D76B6C, 0x1D80B48, "
+        "0x1D82948) only skip a menu restriction and the gift/purchase checks, so it isn't the friendship tree.");
+
+    Section("OTHER", nullptr);
     if (Toggle("Audience mode (experimental)", &X.audience,
                "The audience reaction menu outside an event (AudienceSettings: show reaction menu, no reservation). "
                "Off: the game's normal audience settings back.")) ApplyAudience();
-    if (Toggle("Read all messages", &X.readAll,
-               "Shows the text of chat from people you haven't befriended (and tables you're not at) instead of "
-               "\"...\": the chat bubble's \"may show text\" check (0x1478CB0, 0x1478CE4) always says yes. Your screen "
-               "only. Off: the game's code put back.")) {
-        bool ok = SetCodePatch(kReadPatches[0], X.readAll);
-        if (ok && !SetCodePatch(kReadPatches[1], X.readAll)) {
-            SetCodePatch(kReadPatches[0], !X.readAll);
-            ok = false;
-        }
-        if (!ok) X.readAll = !X.readAll;
-        else Log("Read all messages %s", X.readAll ? "on" : "off");
-    }
-    ImGui::TextUnformatted("Speak to all");
-    Dim("Says this over your avatar, like the developers' interview messages (AvatarSpeak). Experimental: who else "
-        "sees it is up to the game and your server.");
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
-    ImGui::InputTextWithHint("##speak", "message", X.speak, sizeof X.speak);
-    ImGui::SameLine();
-    if (ImGui::Button("Send", ImVec2(Px(130), 0)) && X.speak[0])
-        StartEvent(std::string("Said: ") + X.speak, "speak", "AvatarSpeak",
-                   {{"message", Quote(X.speak), ""}, {"localizeMessage", "false", ""}});
-
-    Section("UNLOCKS", nullptr);
     if (Toggle("Unlock all (local only)", &X.unlockAll,
                "Everything the game checks with its \"has unlock\" (emotes, outfits, quests, spells...) counts as "
                "unlocked on your device (0xDFC144 always returns yes). Local only: the server still decides anything "
@@ -1643,6 +1888,32 @@ void SocialSection() {
                "see your real unlocks again.")) {
         if (!SetCodePatch(kUnlockPatch, X.unlockAll)) X.unlockAll = !X.unlockAll;
         else Log("Unlock all %s", X.unlockAll ? "on" : "off");
+    }
+}
+
+// Social repeats: one networked light every 0.5 s while on; the friendship level kept within the tier list.
+void SocialTick(double t) {
+    if (SO.forceLight && SO.lightReal && M.server && t >= SO.lightNext) {
+        SO.lightNext = t + 0.5;
+        uintptr_t game = GameObject(), barn = 0;
+        uint8_t charcoal = 0;
+        if (game && Rd(game + kGameAvatarBarnOff, barn) && barn && ReadByte(kCharcoalSwitch, charcoal) && charcoal == 1)
+            for (int k = 0; k < kAvatarSlots; k++) {
+                int i = (SO.lightSlot + k) % kAvatarSlots;
+                if (!LightCandidate(barn, i, nullptr)) continue;
+                SO.lightSlot = (i + 1) % kAvatarSlots;
+                if (RunOnGameThread(LightOnGameThread, (uintptr_t)i)) SO.lit++;
+                break;
+            }
+    }
+    if (SO.tree && t >= SO.treeCheck) {
+        SO.treeCheck = t + 2.0;
+        int n = TreeLevels();
+        if (n <= 0) {  // list gone (level change, reload): the game's own code back
+            if (SetTree(0)) SO.tree = false, SO.treeLevels = 0, Log("Friendship tree: tier list gone; back to normal");
+        } else if (n != SO.treeLevels && SetTree(n)) {
+            SO.treeLevels = n;
+        }
     }
 }
 
@@ -1711,6 +1982,7 @@ void FeaturesTick() {
         X.audienceStopAt = 0;
         if (!X.audience && !X.broom) StopEvent("", "audience");
     }
+    SocialTick(t);
     if (X.candleRedAt > 0 && t >= X.candleRedAt) {
         X.candleRedAt = 0;
         CandleState("Red candle out", "kAvatarCandleFlameState_On", "1");
@@ -1728,14 +2000,43 @@ void FeaturesTab() {
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
                                   "Camera", "World",  "Teleport",  "Social",  "Shout"};
-    // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone
-    const float subW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
-    for (int i = 0; i < (int)IM_ARRAYSIZE(kSubs); i++) {
-        if (i % 5) ImGui::SameLine();
-        bool sel = gSub == i;
-        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
-        if (ImGui::Button(kSubs[i], ImVec2(subW, Dp(44))) && !sel) gSub = i;
-        if (sel) ImGui::PopStyleColor();
+    // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
+    // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
+    bool collapsed = FeaturesTabsCollapsed();
+    {
+        char head[64];
+        snprintf(head, sizeof head, "%s##subhead", kSubs[gSub]);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.f, 0.5f));
+        if (ImGui::Button(head, ImVec2(-1, Dp(44)))) {
+            collapsed = !collapsed;
+            SetFeaturesTabsCollapsed(collapsed);
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        // the arrow at the button's right end: down = folded (tap to open), up = open
+        ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+        float h = (b.y - a.y) * 0.22f, cx = b.x - (b.y - a.y) * 0.5f, cy = (a.y + b.y) * 0.5f;
+        ImU32 col = ImGui::GetColorU32(ImGuiCol_Text);
+        if (collapsed)
+            ImGui::GetWindowDrawList()->AddTriangleFilled(ImVec2(cx - h, cy - h * 0.6f), ImVec2(cx + h, cy - h * 0.6f),
+                                                          ImVec2(cx, cy + h * 0.6f), col);
+        else
+            ImGui::GetWindowDrawList()->AddTriangleFilled(ImVec2(cx - h, cy + h * 0.6f), ImVec2(cx, cy - h * 0.6f),
+                                                          ImVec2(cx + h, cy + h * 0.6f), col);
+    }
+    if (!collapsed) {
+        const float subW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
+        for (int i = 0; i < (int)IM_ARRAYSIZE(kSubs); i++) {
+            if (i % 5) ImGui::SameLine();
+            bool sel = gSub == i;
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+            if (ImGui::Button(kSubs[i], ImVec2(subW, Dp(44)))) {
+                gSub = i;
+                SetFeaturesTabsCollapsed(true);  // the space back once a sub-tab is picked
+            }
+            if (sel) ImGui::PopStyleColor();
+        }
     }
     ImGui::Separator();
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
