@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "announce_logic.h"
 #include "canvas_api.h"
 #include "imgui.h"
 #include "json.h"
@@ -1917,6 +1918,188 @@ void SocialTick(double t) {
     }
 }
 
+// ---------------------------------------------------------------- Developers: announcement box
+//
+// Investigation (see docs/AudienceBroadcast.md): AudienceBroadcast is the game's chat channel
+// (kChatChannel_AudienceBroadcast) used by its audience/concert system. A message is sent by firing the game's
+// SendChatMessageRequestEvent, which becomes an AccountSendChatMessageRequest on the server; the server fans it out
+// to other instances via its kNetMsg_Audience* messages, but ONLY for an account the server has authorized as a
+// broadcaster (AccountHasSuperLikeBroadcasterRequest) holding a valid audience reservation (Eden Run is a supported
+// type). So this box fires the game's own event and lets the server decide. It does not, and cannot, forge the
+// broadcaster authorization: that lives on the server. Loopback is a purely local channel, used for an offline
+// preview.
+struct Dev {
+    char message[256] = "";
+    int channel = 0;  // index into channelOptions
+    bool fieldsRead = false;
+    bool eventPresent = false;
+    std::string channelField, messageField;
+    std::vector<std::string> channelOptions;  // full kChatChannel_* names, read from the game
+    std::string status;
+    bool statusOk = true;
+    std::string lastSent;  // last message queued, shown back in blue
+} D;
+
+// Reads SendChatMessageRequestEvent's settings from the game once and picks, by kind (not by a hard-coded name), the
+// chat-channel enum field and the message text field. Leaves eventPresent false if the event isn't in this build.
+void ReadChatFields() {
+    if (D.fieldsRead || !GameBase()) return;
+    IndexTypes();
+    auto it = gTypeIndex.find("SendChatMessageRequestEvent");
+    D.fieldsRead = true;
+    if (it == gTypeIndex.end()) {
+        D.eventPresent = false;
+        return;
+    }
+    D.eventPresent = true;
+    size_t n = 0;
+    const LabType& t = Types(&n)[it->second];
+    std::vector<ann::Setting> settings;
+    for (uint32_t i = 0; i < t.settingCount; i++) {
+        const LabSetting& s = Setting(t.settingFirst + i);
+        ann::Setting a;
+        a.name = GameString(s.nameAddr);
+        a.isText = s.kind == kText;
+        a.isEnum = s.kind == kEnum;
+        if (a.isEnum && s.enumIndex != 0xFFFF) {
+            const LabEnum& e = Enum(s.enumIndex);
+            if (e.count) a.firstEnumOption = GameString(EnumOptionAddr(e.first));
+        }
+        settings.push_back(std::move(a));
+    }
+    D.channelField = ann::PickChannelField(settings);
+    D.messageField = ann::PickMessageField(settings);
+    if (!D.channelField.empty()) {
+        D.channelOptions = EnumOptions("SendChatMessageRequestEvent", D.channelField.c_str());
+        for (size_t i = 0; i < D.channelOptions.size(); i++)  // default to AudienceBroadcast if the game has it
+            if (D.channelOptions[i] == ann::kBroadcastOption) D.channel = (int)i;
+    }
+}
+
+void SendAnnounce(bool loopback) {
+    std::string problem = ann::MessageProblem(D.message);
+    if (!problem.empty()) {
+        D.statusOk = false;
+        D.status = problem;
+        return;
+    }
+    if (!D.eventPresent || D.channelField.empty() || D.messageField.empty()) {
+        D.statusOk = false;
+        D.status = "SendChatMessageRequestEvent or its channel/message fields aren't in this game build.";
+        return;
+    }
+    std::string chanOption = loopback
+                                 ? std::string(ann::kLoopbackOption)
+                                 : (D.channel < (int)D.channelOptions.size() ? D.channelOptions[D.channel] : "");
+    if (chanOption.empty()) {
+        D.statusOk = false;
+        D.status = "Pick a channel first.";
+        return;
+    }
+    std::string fallback;  // the enum option's number, tried if the game won't take the name
+    for (size_t i = 0; i < D.channelOptions.size(); i++)
+        if (D.channelOptions[i] == chanOption) fallback = std::to_string(i);
+    std::string msg = ann::Trim(D.message);
+    std::vector<Set> sets = {
+        {D.messageField, Quote(msg), ""},
+        {D.channelField, Quote(chanOption), fallback},
+        {"localizeMessage", "false", ""},  // harmless if the event has no such setter; stops our text being read as a key
+    };
+    // Build and run through the same machinery the other features use, so the setter names come from the game.
+    std::string lua = EventLua("", "SendChatMessageRequestEvent", sets);
+    if (lua.empty()) {
+        D.statusOk = false;
+        D.status = "The game won't fire SendChatMessageRequestEvent (not an event in this build; see the Log).";
+        return;
+    }
+    int rc = RunLua(std::string(kPrelude) + lua,
+                    loopback ? "Announcement preview (local)" : "Announcement sent", "announce");
+    D.statusOk = rc == 0;
+    D.status = ann::StatusText(ann::ChannelShortName(chanOption), rc, loopback);
+    if (rc == 0) D.lastSent = msg;
+    Log("Developers announce (%s): %s", loopback ? "loopback" : ann::ChannelShortName(chanOption).c_str(),
+        D.status.c_str());
+}
+
+void DevelopersSection() {
+    ReadChatFields();
+    Section("DEVELOPERS ANNOUNCEMENT",
+            "Compose a message and send it on one of the game's chat channels, including AudienceBroadcast (the "
+            "channel the game's audience/concert system uses). Experimental: delivery to other players is the "
+            "server's decision (see below).");
+    if (!GameBase()) {
+        Dim("Waiting for the game to load...");
+        return;
+    }
+    if (!D.eventPresent) {
+        ImGui::TextColored(kAmber300, "SendChatMessageRequestEvent isn't registered in this game build.");
+        Dim("Without it the mod can't compose a chat message, so nothing here will work. (Checked against the "
+            "game's own type table.)");
+        if (ImGui::Button("Check again", ImVec2(Px(200), 0))) D.fieldsRead = false;
+        return;
+    }
+
+    ImGui::TextUnformatted("Message");
+    ImGui::InputTextMultiline("##annmsg", D.message, sizeof D.message, ImVec2(-1, Px(90)));
+    Dim("Up to %zu characters. Keep it short: these are chat messages. Say where to go, when to proceed, whether to "
+        "wait or regroup.", ann::kMaxAnnounceChars);
+
+    // Preview in blue (the game's messages show blue).
+    std::string preview = ann::Trim(D.message);
+    if (!preview.empty()) {
+        ImGui::TextColored(kSky300, "Announcement:");
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, kSky300);
+        ImGui::TextWrapped("%s", preview.c_str());
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Channel");
+    if (D.channelOptions.empty()) {
+        ImGui::TextColored(kAmber300, "No chat-channel enum found on the event; only the Log-based send will work.");
+    } else {
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+        std::string curName = D.channel < (int)D.channelOptions.size()
+                                  ? ann::ChannelShortName(D.channelOptions[D.channel])
+                                  : "-";
+        if (ImGui::BeginCombo("##annchan", curName.c_str())) {
+            for (int i = 0; i < (int)D.channelOptions.size(); i++)
+                if (ImGui::Selectable(ann::ChannelShortName(D.channelOptions[i]).c_str(), i == D.channel))
+                    D.channel = i;
+            ImGui::EndCombo();
+        }
+        Dim("AudienceBroadcast reaches an audience across instances when the server authorizes it; Loopback stays on "
+            "your own screen.");
+    }
+
+    ImGui::Spacing();
+    bool inWorld = GameObject() != 0;
+    if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world first to send.");
+    ImGui::BeginDisabled(!inWorld);
+    if (ImGui::Button("Send announcement", ImVec2(Px(240), 0))) SendAnnounce(false);
+    ImGui::SameLine();
+    if (ImGui::Button("Preview locally", ImVec2(Px(200), 0))) SendAnnounce(true);
+    ImGui::EndDisabled();
+    if (!D.status.empty()) ImGui::TextColored(D.statusOk ? kSky300 : kRed300, "%s", D.status.c_str());
+    if (!D.lastSent.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kSky300);
+        ImGui::TextWrapped("Last message: %s", D.lastSent.c_str());
+        ImGui::PopStyleColor();
+    }
+    Dim("Using the game's own fields: message = \"%s\", channel = \"%s\".", D.messageField.c_str(),
+        D.channelField.c_str());
+
+    Section("HOW DELIVERY WORKS", nullptr);
+    Dim("AudienceBroadcast is delivered by the server, not the client. The server sends your message to every "
+        "instance only if your account is an authorized broadcaster (AccountHasSuperLikeBroadcasterRequest) holding "
+        "a valid audience reservation (Eden Run is a supported reservation type). This box fires the game's own "
+        "SendChatMessageRequestEvent and reports what the game returned; it does not, and cannot, forge broadcaster "
+        "status or a reservation. On your temporary private server, set that account up as a broadcaster for the "
+        "Eden Run reservation and the cross-instance send will work there. Use Preview locally (Loopback) to check "
+        "wording with no server involved.");
+}
+
 int gSub = 0;
 
 }  // namespace
@@ -1998,8 +2181,8 @@ void FeaturesTab() {
     if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world to use these.");
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
-    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
-                                  "Camera", "World",  "Teleport",  "Social",  "Shout"};
+    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items",  "Emotes",
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout",  "Developers"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
     bool collapsed = FeaturesTabsCollapsed();
@@ -2052,6 +2235,7 @@ void FeaturesTab() {
             case 8: TeleportSection(); break;
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
+            case 11: DevelopersSection(); break;
         }
     }
     TouchScroll();
