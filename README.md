@@ -118,6 +118,32 @@ e.g. OutfitSelect's `onClosetOpen`) get nil, like objects.
 Icons and the outfit/emote lists come from Canvas's own API (`IconLoader::getUIIcon`, `Cipher::read_asset`,
 declared in `src/canvas_api.h`); nothing from the game is stored in this repository.
 
+### Teleport (Features sub-tab)
+
+Shows the current level and your position at the top. The avatar is always moved by the game's own `AvatarSetPos`
+event with one marker (`game:markerBarn():CreateMarker(0)`, set with `m:pos({x, y, z})`) placed at the target; the
+position is only ever **read**, never written. All Lua goes through the main-thread queue (keys `teleport`,
+`changelevel`, `levellist`). Coordinates outside ±100000 or not finite are refused.
+
+| Part | What it does | Uses (0.35.2) |
+|---|---|---|
+| **Teleport To Realm** | search, scrolling list grouped by realm (Home & Aviary, Isle of Dawn, Daylight Prairie, Hidden Forest, Valley of Triumph, Golden Wasteland, Vault of Knowledge, Eye of Eden, Events & other), names made from the level ids ("Prairie_ButterflyFields" → "Prairie: Butterfly Fields"; the id in the tooltip), *Reload this level* | the game's `ChangeLevel` event (`levelName`, `isLevelComplete` false). List: 72 known level ids (the levels other mods teleport to: TSM's level list, as level ids are facts; TheVoid's own level names are encrypted in its library), 44 more level-like ids from 0.35.2's strings behind *Unconfirmed ids too* (marked `?`; they may not be levels), plus the game's own lists when available: `Data/Scripts/LevelSelect.lua` / `Data/Raw/Scripts/LevelSelect.lua` read through Canvas (its `level("Id", …)` entries; the files TheVoid reads), and **Ask the game**, which has the game's Lua write its `ArcLevels` table to `offsetlab_levels.txt` next to the mod |
+| **POI Menu** | the level links (doorways between levels) of the current level, with where they lead and how far they are: the button moves you onto one (height above it: slider), **Enter** changes to the level it leads to | read natively every second while shown: Game `+0x528` → LevelLinkBarn; its count (u32) at `+0x4E70`, links inline from `+0x70`, `0xD0` bytes each (max 96); in a link: transform (4×4) at `+0x30`, `linkName` `+0x80`, `levelName` `+0x98` (libc++ `std::string`), `enabled` `+0xCC`. Links whose transform isn't affine or whose position isn't sane are skipped |
+| **Coordinates** | x/y/z typed (or dragged), *Use my position*, **Teleport**, **Back** (to where you were before the last teleport), *Snap to the ground* (`onGround`) | `AvatarSetPos` (`marker`; `relMarker` nil, `bstGuid` 0, `randomGroundInMarker`/`setLevelStartPosition` false, `breakHandHold`/`killMomentum` true) |
+| **Quick Movement** | distance slider (0.5–100 m), Up / Down / Forward / Back / Left / Right, *Hold to repeat* | current position (below) + `AvatarSetPos`. Presses within 0.6 s add up from the last target. *Relative to facing* (experimental) uses the float after the position (TSM's avatar rotation, `+0x20`: forward = (sin, cos)); off, or when that value doesn't look like an angle: world axes (forward = +z, right = +x) |
+
+**Avatar position chain** (each hop checked in the 0.35.2 code): game object (`0x33A5E80`) `+0x318` → AvatarBarn
+(the Game reflection record "avatarBarn", built at `0x17C52D8`); the local avatar is `barn + 0x30` when the byte at
+`barn + 0xB8A0` is set and bit 3 of the halfword at `barn + 0x10A3C` is set (exactly what the game's
+`GetLocalAvatar(barn, true)` at `0x11B2BC4` checks); avatar `+0x18` → `{x, y, z}` (the game prints it as "pos" with
+"%.2f,%.2f,%.2f" at `0xFB3934`; 151 callers of `0x11B2BC4` read a vector there). Values must be finite and < 100000.
+Current level: the Game record "levelName" (`+0x960`), shown only if it reads as a level id.
+
+Experimental: Unconfirmed ids (changing to an id that isn't a level may hang or crash the game), *Relative to facing*
+(the yaw offset is TSM's, not checked in the code), POI positions (the translation is taken from the link's stored
+transform). Not done: event portals (`Portal` objects in the PortalBarn, Game `+0x660`; its storage isn't worked out
+yet), TheVoid's `Objects.level.bin` points (shrines, waypoints: binary format not known here).
+
 ### Recorder
 
 - **Hook**: the game's base Event start, `0x1717C8C`: the function the game's Lua `Event:Start` calls (its method record

@@ -1692,11 +1692,11 @@ void FeaturesTab() {
     if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world to use these.");
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
-    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items",
-                                  "Emotes", "Camera", "World",     "Social",  "Shout"};
+    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone
     const float subW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kSubs); i++) {
         if (i % 5) ImGui::SameLine();
         bool sel = gSub == i;
         if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
@@ -1714,8 +1714,9 @@ void FeaturesTab() {
             case 5: EmotesSection(); break;
             case 6: CameraSection(); break;
             case 7: WorldSection(); break;
-            case 8: SocialSection(); break;
-            case 9: ShoutSection(); break;
+            case 8: TeleportSection(); break;
+            case 9: SocialSection(); break;
+            case 10: ShoutSection(); break;
         }
     }
     TouchScroll();

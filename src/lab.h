@@ -119,6 +119,7 @@ std::vector<std::string> LogLines();
 void Draw(bool* open);
 void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders, buttons)
 void FeaturesTick();     // features.cpp: repeating actions, every frame
+void TeleportSection();  // teleport.cpp: the Features tab's Teleport sub-tab
 void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
 void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
 float Px(float v);
