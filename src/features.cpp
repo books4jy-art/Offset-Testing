@@ -217,7 +217,9 @@ bool OneShot(const char* type) {
         "SetCameraShake", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
-        "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact"};
+        "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
+        // 0.12.1: candle events, same (AvatarSetCandleState 0x11F5A60, SocialGift 0x1EB9EB4 end in 0x171F82C)
+        "AvatarSetCandleState", "SocialGift"};
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
     return false;
@@ -1276,6 +1278,7 @@ struct Extra {
     std::vector<std::string> dyes;
     bool dyesRead = false;
     bool closet = false;
+    double candleRedAt = 0;  // Red candle: put away first, then taken out at this time
     char speak[200] = "";
 } X;
 
@@ -1284,6 +1287,13 @@ void GameFunction(const std::string& what, const char* fn, const std::string& ke
     std::string f = fn;
     Run(what, "if type(" + f + ") ~= \"function\" then error(\"" + f + " isn't in this game build\") end\n" + f +
                   "(game)\n", key);
+}
+
+// Your avatar's candle: AvatarSetCandleState (state at +0x28: AsIs 0 / On 1 / Off 2), an event the generator's table
+// misses (registered at 0x11F44F8, parent Event). Its update (0x11F5A60) takes the candle out for On (0x1876750 with
+// "premium" off: kCandleMesh_Player), puts it away for Off (0x118DF50), then stops itself.
+void CandleState(const std::string& what, const char* state, const char* number) {
+    StartEvent(what, "", "AvatarSetCandleState", {{"state", Quote(state), number}}, true);
 }
 
 void NotPossible(const char* label, const char* why) {
@@ -1573,9 +1583,29 @@ void ItemsSection() {
                 "The bucket is a prop event (Bucket, an AvatarPropEvent) that the game starts from an equipped bucket "
                 "prop; started from Lua there's no prop for it to act on, and your own prop couldn't be put back "
                 "exactly when switched off.");
-    NotPossible("Take out candle (red / white)",
-                "No event or Lua function makes your own avatar take out its candle: Npc_TakeOutFlame works only on "
-                "NPCs, and the avatar's candle follows your input.");
+
+    Section("CANDLE", "Holds your candle out, as if you held the candle button, to light candles and other players "
+            "or to stand with a friend. Put away ends it (your normal candle button works as always).");
+    float cw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    if (ImGui::Button("Red candle", ImVec2(cw, 0))) {
+        CandleState("", "kAvatarCandleFlameState_Off", "2");  // a white one out stays white: away first
+        X.candleRedAt = ImGui::GetTime() + 0.4;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("White candle", ImVec2(cw, 0))) {
+        X.candleRedAt = 0;
+        StartEvent("White candle out", "", "SocialGift", {});
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Put away", ImVec2(cw, 0))) {
+        X.candleRedAt = 0;
+        CandleState("Candle put away", "kAvatarCandleFlameState_Off", "2");
+    }
+    Dim("Red: your own candle, the one the candle button takes out (AvatarSetCandleState, state On; the game's "
+        "player candle). White: the white candle the game shows when you offer or spend candles with a friend "
+        "(SocialGift with no friend chosen: nothing is sent or spent; it needs at least one candle, with none the "
+        "game may open its candle menu). Put away: AvatarSetCandleState, state Off. Experimental: what other "
+        "players see is up to the game.");
 }
 
 void SocialSection() {
@@ -1680,6 +1710,10 @@ void FeaturesTick() {
     if (X.audienceStopAt > 0 && t >= X.audienceStopAt) {
         X.audienceStopAt = 0;
         if (!X.audience && !X.broom) StopEvent("", "audience");
+    }
+    if (X.candleRedAt > 0 && t >= X.candleRedAt) {
+        X.candleRedAt = 0;
+        CandleState("Red candle out", "kAvatarCandleFlameState_On", "1");
     }
     if (M.tpose && M.tposeHoldAt > 0 && t >= M.tposeHoldAt) {
         M.tposeHoldAt = 0;
