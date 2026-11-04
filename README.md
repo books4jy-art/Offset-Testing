@@ -60,7 +60,7 @@ switched off with `SetEnabled(false)`: events have only `Start`, `SetEnabled` an
 `Stop`) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
 **Reset**, which puts the game's normal behaviour back. All local to your game.
 
-The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera, World, Teleport, Social, Shout, Developers (the Social sub-tab: speak to all, read all messages, take out candle, show others, force light / unlight all, offer emotes, friendship tree; the Developers sub-tab: the announcement box — see [docs/AudienceBroadcast.md](docs/AudienceBroadcast.md)).
+The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera, World, Teleport, Social, Shout (the Social sub-tab: speak to all, read all messages, take out candle, show others, force light / unlight all, offer emotes, friendship tree).
 
 | Feature | Control | Uses (0.35.2) |
 |---|---|---|
@@ -114,7 +114,6 @@ The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera,
 | Unlock friendship tree (Social, client side) | toggle | the friendship level (`0x24A92F8`, Game `+0x830` → `+0x10`): `ldr w0, [x0, #4]` at `0x24A9390` becomes `mov w0, #levels` and `cbz x0` at `0x24A938C` a NOP, `levels` being the size of the game's own tier list (read each 2 s; more aborts the game at `0x24AF7FC`). The menu then shows every ability unlocked (`trust_error_tier_locked` check, `0x1D775A0`). The server and the other player still decide. Off: both words put back |
 | Audience mode (Social, experimental) | toggle | `AudienceSettings` (reaction menu, no reservation); off: the neutral settings for a moment, then switched off |
 | Unlock all (Social, local only) | toggle | the game's "has unlock" check (`0xDFC144`): its branch to the second lookup (`cbz x0` at `0xDFC174`) becomes a NOP so it always returns yes. The server still decides anything it checks. Off: the instruction put back |
-| Announcement (Developers, experimental) | message text + channel picker + Send / Preview locally | fires the game's own `SendChatMessageRequestEvent` with the chosen chat channel (incl. `kChatChannel_AudienceBroadcast`) and the message text; channel/message field names are read from the game's type table, not hard-coded. Shown in blue. Server-delivered: it reaches other instances only if the server authorizes the account as a broadcaster (`AccountHasSuperLikeBroadcasterRequest`) with a valid audience reservation. The mod does not forge that. `kChatChannel_Loopback` previews locally. See [docs/AudienceBroadcast.md](docs/AudienceBroadcast.md) |
 
 Not yet: shout pitch (0.35.2 has no setting for it), first-person view and unlimited zoom
 (camera code changes not checked for 0.35.2 yet), Follow.
