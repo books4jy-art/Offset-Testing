@@ -59,7 +59,7 @@ switched off with `SetEnabled(false)`: events have only `Start`, `SetEnabled` an
 `Stop`) or sets one of the game's variables. Toggles run while on; sliders apply when you let go, and every slider has
 **Reset**, which puts the game's normal behaviour back. All local to your game.
 
-The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
+The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera, World, Social, Shout.
 
 | Feature | Control | Uses (0.35.2) |
 |---|---|---|
@@ -87,9 +87,33 @@ The tab has sub-tabs: Player, Transform, Outfits, Emotes, Camera, World, Shout.
 | Disable shadow | toggle | `AvatarDisableShadow` |
 | Surface friction | slider | the game's "slippery ground" switch (byte at `0x34AFCEC`) and the value it loads (instructions at `0x249E524`, normally 0.2), patched to the slider's value; Reset restores both |
 | Shout | colour, intensity, voice type, Shout button, repeat + rate | `AvatarDoShout`, `AvatarSetVoice` (temporary) |
+| Charge energy (Energy) | amount slider + Charge | `AvatarChargeEnergy` (`addAmount`, the game's energy units; a one-shot) |
+| Infinite energy (Energy) | toggle | the game's auto-charge switch (byte `0x3131634`, always charging as if at a light) and no-rain-drain switch (byte `0x3131648`); off: both 0 again |
+| Infinite oxygen (Energy) | toggle | `AvatarSetEnergy` (set breath, continuous: breath kept full every frame); off: switched off |
+| Invincibility (Energy) | toggle | the game's invincibility switch (byte `0x3131638`: energy and breath only go up, breath kept full); off: 0 again |
+| Revive avatar, Break / Restore elder mask (Energy, experimental) | buttons | the game's debug commands `ReviveAvatar(game)`, `BreakElderArmor(game)`, `RepairElderArmor(game)` (checked to exist first) |
+| Mini mode (Transform, experimental) | toggle | `SetAvatarMicroMode` (its update shrinks every avatar each frame while it runs, on your screen); off: switched off |
+| Broom mode (Transform, experimental) | toggle | `AudienceSettings` with *replace local avatar* and the `Broomstick` look; off: the neutral settings for a moment, then switched off |
+| Swim on ground / through air (Transform) | disabled | not possible yet: nothing switches the avatar to swimming outside the game's water volumes, and its water check isn't verified for 0.35.2 |
+| Glowstick mode (Items, experimental) | 9 colours + Rainbow, Clear | `AvatarRainbowParty` (a fixed colour or the shifting hue, your avatar only), one at a time |
+| Glow (Items) | buttons, one at a time, Clear | `GrantSpell` (`glow`, `glow_rainbow`, `glow_tgc`, `hairtint`, `hairtint_rainbow`; until cleared), the previous one removed with `RemoveSpell` in the same script |
+| Walk effects (Items) | buttons, one at a time, Clear | `GrantSpell` / `RemoveSpell` with the game's ground, foot, bloom and flight trail spells |
+| Dye outfits (Items, experimental) | slot (or all slots), primary / secondary, a button per dye colour, Random, Remove | `AvatarSetOutfitDye` (local and temporary; the colour names are the game's own, read from `PlacePlaceable`'s dye options) |
+| Dye menu (Items) | button | the game's `OpenCraftingMenu(game)` (the dye station menu, anywhere). Not a toggle: nothing closes it from outside; dyeing there is real |
+| Spawn closet (Items, experimental) | Spawn / Remove | `OutfitSelect` as a closet with no region, its button marker put at the camera by `GetCameraTransform` once and dropped to the floor |
+| Bucket brigade, Take out candle (Items) | disabled | not possible yet: the bucket is a prop event (`Bucket`, an `AvatarPropEvent`) that needs an equipped bucket prop; no event takes out your own candle (`Npc_TakeOutFlame` is for NPCs) |
+| Audience mode (Social, experimental) | toggle | `AudienceSettings` (reaction menu, no reservation); off: the neutral settings for a moment, then switched off |
+| Read all messages (Social) | toggle | the chat bubble's "may show text" value: `mov w22, wzr` at `0x1478CB0` and `orr w22, w0, w8` at `0x1478CE4` become `mov w22, #1` (each word checked first); off: both put back |
+| Speak to all (Social, experimental) | text + Send | `AvatarSpeak` (`message`; a one-shot) |
+| Unlock all (Social, local only) | toggle | the game's "has unlock" check (`0xDFC144`): its branch to the second lookup (`cbz x0` at `0xDFC174`) becomes a NOP so it always returns yes. The server still decides anything it checks. Off: the instruction put back |
 
 Not yet: shout pitch (0.35.2 has no setting for it), first-person view and unlimited zoom
 (camera code changes not checked for 0.35.2 yet), Follow.
+
+Every toggle puts the game back when switched off: kept events are switched off, switches and code words get
+their 0.35.2 values back. Events that stop by themselves (their update calls the game's event stop, `0x171F82C`:
+`AvatarSetOutfitDye`, `AvatarSpeak`, `AvatarChargeEnergy`, spells…) are never kept. List settings (`State_1`…`State_8`,
+e.g. OutfitSelect's `onClosetOpen`) get nil, like objects.
 
 Icons and the outfit/emote lists come from Canvas's own API (`IconLoader::getUIIcon`, `Cipher::read_asset`,
 declared in `src/canvas_api.h`); nothing from the game is stored in this repository.

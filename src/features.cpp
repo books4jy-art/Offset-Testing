@@ -187,6 +187,12 @@ std::vector<Set> GameDefaults(const char* type) {
             case kEnum: {
                 if (st.enumIndex == 0xFFFF) break;
                 const LabEnum& e = Enum(st.enumIndex);
+                // "State_1".."State_8" are lists of other events/objects (OutfitSelect's onClosetOpen...), not
+                // choices: give them nil like any object, never text or a number
+                if (e.count && GameString(EnumOptionAddr(e.first)) == "State_1") {
+                    out.push_back({name, "nil", ""});
+                    break;
+                }
                 int pick = 0;
                 for (uint32_t j = 0; j < e.count; j++)
                     if (!def.empty() && GameString(EnumOptionAddr(e.first + j)) == def) pick = (int)j;
@@ -209,19 +215,23 @@ bool OneShot(const char* type) {
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
         "SetCameraShake", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
-        "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent"};
+        "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
+        // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
+        "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact"};
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
     return false;
 }
 
-bool StartEvent(const std::string& what, const std::string& keyIn, const char* type, const std::vector<Set>& given,
-                bool allowUnlisted = false) {
-    if (!SafeToFire(type, allowUnlisted)) return false;
+// The Lua that starts event `type` (to go after kPrelude), keeping it as OffsetLab[key] unless it's a one-shot.
+// "" when the event mustn't be fired.
+std::string EventLua(const std::string& keyIn, const char* type, const std::vector<Set>& given,
+                     bool allowUnlisted = false) {
+    if (!SafeToFire(type, allowUnlisted)) return std::string();
     const std::string key = OneShot(type) ? std::string() : keyIn;
     std::vector<Set> sets = GameDefaults(type);  // first the game's defaults, then ours
     sets.insert(sets.end(), given.begin(), given.end());
-    std::string s = kPrelude;
+    std::string s = "do\n";
     if (!key.empty()) s += "stop(\"" + key + "\")\n";
     s += "local e = game:eventBarn():AddEventByMetaName(\"" + std::string(type) + "\")\n";
     s += "if not e then error(\"" + std::string(type) + " not found\") end\n";
@@ -237,11 +247,18 @@ bool StartEvent(const std::string& what, const std::string& keyIn, const char* t
     }
     s += "e:Start()\n";
     if (!key.empty()) s += "OffsetLab[\"" + key + "\"] = e\n";
-    // coalescing key for the queue: the feature's key (also for one-shots, e.g. one per outfit slot), else the type
-    const std::string queueKey = keyIn.empty() ? std::string("once:") + type : keyIn;
     s += "if #bad > 0 and print then pcall(print, \"Offset Lab: " + std::string(type) +
          " didn't take \" .. table.concat(bad, \", \")) end\n";
-    return Run(what, s, queueKey);
+    return s + "end\n";
+}
+
+bool StartEvent(const std::string& what, const std::string& keyIn, const char* type, const std::vector<Set>& given,
+                bool allowUnlisted = false) {
+    std::string lua = EventLua(keyIn, type, given, allowUnlisted);
+    if (lua.empty()) return false;
+    // coalescing key for the queue: the feature's key (also for one-shots, e.g. one per outfit slot), else the type
+    const std::string queueKey = keyIn.empty() ? std::string("once:") + type : keyIn;
+    return Run(what, kPrelude + lua, queueKey);
 }
 
 bool StopEvent(const std::string& what, const std::string& key) {
@@ -1206,6 +1223,399 @@ void ShoutSection() {
     Slider("rate", &F.shoutPerSecond, 0.2f, 10.f, 1.f, "%.1f / s");
 }
 
+
+// ---------------------------------------------------------------- 0.11.0: energy, modes, items, social
+
+// A one-word change to the game's code: the word is checked against 0.35.2's before writing (ours is accepted too,
+// so switching off after a crash of the mod still works) and put back exactly when switched off.
+struct CodePatch { const char* what; uint32_t at; uint32_t original; uint32_t patched; };
+
+// Unlock all: the game's "account has unlock" check (0xDFC144, bool (barn, name)) returns 1 when the name is in its
+// first set (0xEE74F8 lookup), otherwise the result of a second lookup. The branch to the second lookup
+// (0xDFC174, cbz x0) becomes a NOP, so the function always returns 1. One aligned word: always a whole instruction.
+const CodePatch kUnlockPatch = {"Unlock all", 0xDFC174, 0xB40000C0u /* cbz x0, #0xdfc18c */, kNop};
+// Read all messages: the chat bubble code (0x1478CAC..0x1478CE8) works out in w22 whether a message's text may be
+// shown (table/friend checks). The two places that can make it 0 (mov w22, wzr / orr w22, w0, w8) give 1 instead;
+// every other path already gives 1.
+const CodePatch kReadPatches[2] = {
+    {"Read all messages", 0x1478CB0, 0x2A1F03F6u /* mov w22, wzr */, 0x52800036u /* mov w22, #1 */},
+    {"Read all messages", 0x1478CE4, 0x2A080016u /* orr w22, w0, w8 */, 0x52800036u /* mov w22, #1 */},
+};
+
+bool SetCodePatch(const CodePatch& p, bool on) {
+    uint32_t cur = 0;
+    if (!GameBase() || !ReadMemory(GameBase() + p.at, &cur, 4) || (cur != p.original && cur != p.patched)) {
+        Log("%s: the game code at 0x%X isn't what 0.35.2 has (0x%08X); not changed", p.what, p.at, cur);
+        return false;
+    }
+    uint32_t v = on ? p.patched : p.original;
+    if (cur == v) return true;
+    if (!WriteGameMemory(p.at, &v, 4)) {
+        Log("%s: write failed", p.what);
+        return false;
+    }
+    return true;
+}
+
+// The game's debug switches (bytes, 0 normally; TSM's labels): kInvincibility (energy and breath only go up, breath
+// kept full: 0x11EEF8C, 0x11EF000, 0x11EAE84), kAutoCharge (always charging as if at a light: 0x11EBC78),
+// kDisableRainDrain (no drain in rain: 0x11EB2FC).
+constexpr uint32_t kInvincibleSwitch = 0x3131638;
+constexpr uint32_t kAutoChargeSwitch = 0x3131634;
+constexpr uint32_t kRainDrainSwitch = 0x3131648;
+
+struct Extra {
+    float charge = 1.f;
+    bool infEnergy = false, infOxygen = false, invincible = false;
+    bool micro = false, broom = false, audience = false;
+    double audienceStopAt = 0;  // the neutral AudienceSettings is switched off a moment after it ran
+    bool unlockAll = false, readAll = false;
+    std::string glowOn, walkOn;  // spell granted by Glow / Walk effects ("" = none)
+    int glowstick = -1;          // index into kGlowColors, -1 = off
+    int dyeSlot = 0, dyeRegion = 0;
+    std::vector<std::string> dyes;
+    bool dyesRead = false;
+    bool closet = false;
+    char speak[200] = "";
+} X;
+
+// Runs one of the game's Lua functions (its debug/tweak commands, e.g. ReviveAvatar(game)), only if this build has it.
+void GameFunction(const std::string& what, const char* fn, const std::string& key) {
+    std::string f = fn;
+    Run(what, "if type(" + f + ") ~= \"function\" then error(\"" + f + " isn't in this game build\") end\n" + f +
+                  "(game)\n", key);
+}
+
+void NotPossible(const char* label, const char* why) {
+    bool off = false;
+    ImGui::BeginDisabled();
+    ImGui::Checkbox(label, &off);
+    ImGui::EndDisabled();
+    ImGui::Indent(ImGui::GetFrameHeight() + 8);
+    ImGui::TextColored(kAmber300, "Not possible in 0.35.2 yet.");
+    Dim("%s", why);
+    ImGui::Unindent(ImGui::GetFrameHeight() + 8);
+}
+
+// Glow / Walk effects: one spell at a time. The one before is removed (RemoveSpell with its name) in the same script
+// that grants the new one; both are one-shots, never kept. "" = just remove.
+void SwapSpell(const std::string& what, std::string& active, const std::string& id, const char* key) {
+    std::string s = kPrelude;
+    if (!active.empty()) {
+        std::string r = EventLua("", "RemoveSpell", {{"buffName", Quote(active), ""}});
+        if (r.empty()) return;
+        s += r;
+    }
+    if (!id.empty()) {
+        std::string g = EventLua("", "GrantSpell", {{"buffName", Quote(id), ""}, {"duration", "36000", ""},
+                                                    {"networked", "false", ""}});
+        if (g.empty()) return;
+        s += g;
+    }
+    if (s.size() == strlen(kPrelude)) return;
+    if (Run(what, s, key)) active = id;
+}
+
+void SpellRow(const char* const* ids, size_t n, std::string& active, const char* key, const char* clearWhat) {
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    for (size_t i = 0; i < n; i++) {
+        if (i % 3) ImGui::SameLine();
+        bool on = active == ids[i];
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+        std::string label = SpellLabel(ids[i]) + "##" + key;
+        if (ImGui::Button(label.c_str(), ImVec2(bw, 0)) && !on) SwapSpell(SpellLabel(ids[i]) + " on", active, ids[i], key);
+        if (on) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", ids[i]);
+    }
+    std::string clear = std::string("Clear##") + key;
+    if (ImGui::Button(clear.c_str(), ImVec2(Px(200), 0)) && !active.empty()) SwapSpell(clearWhat, active, "", key);
+    if (!active.empty()) {
+        ImGui::SameLine();
+        Dim("on: %s", active.c_str());
+    }
+}
+
+struct GlowColor { const char* label; float r, g, b; };
+const GlowColor kGlowColors[] = {
+    {"Red", 1.f, 0.12f, 0.12f},   {"Orange", 1.f, 0.5f, 0.05f}, {"Yellow", 1.f, 0.9f, 0.1f},
+    {"Green", 0.15f, 1.f, 0.2f},  {"Cyan", 0.1f, 0.95f, 1.f},   {"Blue", 0.15f, 0.3f, 1.f},
+    {"Purple", 0.6f, 0.2f, 1.f},  {"Pink", 1.f, 0.35f, 0.75f},  {"White", 1.f, 1.f, 1.f},
+    {"Rainbow", -1.f, 0.f, 0.f},
+};
+
+// Glowstick: AvatarRainbowParty tints your avatar while it runs (its update runs every frame and doesn't stop itself);
+// a specific colour or the shifting rainbow. Clear switches it off.
+void Glowstick(int i) {
+    if (i < 0) {
+        if (X.glowstick >= 0) StopEvent("Glowstick off", "glowstick");
+        X.glowstick = -1;
+        return;
+    }
+    const GlowColor& c = kGlowColors[i];
+    bool rainbow = c.r < 0;
+    char col[96];
+    snprintf(col, sizeof col, "{%.3f, %.3f, %.3f}", rainbow ? 1.f : c.r, rainbow ? 1.f : c.g, rainbow ? 1.f : c.b);
+    if (StartEvent(std::string("Glowstick: ") + c.label, "glowstick", "AvatarRainbowParty",
+                   {{"tintLocalPlayer", "true", ""}, {"tintRemotePlayers", "false", ""},
+                    {"useSpecificColor", rainbow ? "false" : "true", ""}, {"color", col, ""},
+                    {"tintStrength", "0.6", ""}, {"colorBoost", "0.35", ""}, {"innerGlow", "0.002", ""},
+                    {"lightIntensity", "5.0", ""}, {"hueShiftRate", "1.0", ""}}))
+        X.glowstick = i;
+}
+
+// Audience mode and Broom mode share the game's AudienceSettings (one set of audience settings at a time): its update
+// writes the settings every frame while it runs. Off: the neutral settings (no reaction menu, your own avatar) run
+// for a moment, then it's switched off.
+void ApplyAudience() {
+    bool any = X.audience || X.broom;
+    std::vector<Set> sets = {
+        {"requireReservation", "false", ""}, {"replaceLocalAvatar", X.broom ? "true" : "false", ""},
+        {"replaceOtherAvatars", "false", ""}, {"showReactionMenu", X.audience ? "true" : "false", ""},
+        {"allowHandhold", "true", ""}, {"filterWithNetFlags", "false", ""},
+        {"visType", Quote(X.broom ? "Broomstick" : ""), ""}, {"entityTintStrength", "0", ""},
+        {"entityScaleMult", "1", ""}, {"emoteTintStrength", "0", ""}};
+    std::string what = !any ? "Audience settings back to normal"
+                            : std::string(X.broom ? "Broom mode on" : "Broom mode off") +
+                                  (X.audience ? ", audience mode on" : ", audience mode off");
+    if (StartEvent(what, "audience", "AudienceSettings", sets)) X.audienceStopAt = any ? 0 : ImGui::GetTime() + 1.0;
+}
+
+const char* const kDyeSlots[] = {"body", "wing", "hair", "hat", "mask", "face", "neck", "horn", "feet", "prop"};
+
+// Dye outfits: AvatarSetOutfitDye on what you're wearing (local, temporary: a one-shot; your real dyes come back
+// when the outfit is loaded again). Its defaults are the developers' descriptions, so every setting is given.
+void Dye(const std::string& color, bool random, bool remove) {
+    bool all = X.dyeSlot == 0;
+    std::string slot = all ? "body" : kDyeSlots[X.dyeSlot - 1];
+    std::string what = remove ? "Dye removed" : random ? "Random dye" : "Dye " + color;
+    what += all ? " (all slots)" : " (" + slot + (X.dyeRegion ? ", secondary)" : ", primary)");
+    StartEvent(what, "dye_" + slot + std::to_string(X.dyeRegion), "AvatarSetOutfitDye",
+               {{"npc", "nil", ""}, {"slotName", Quote(slot), ""}, {"region", std::to_string(X.dyeRegion), ""},
+                {"removeDye", remove ? "true" : "false", ""}, {"flash", "false", ""},
+                {"randomDyeColor", random ? "true" : "false", ""}, {"allSlots", all ? "true" : "false", ""},
+                {"dyeColor", Quote(color.empty() ? "white" : color), ""}, {"dyeColorString", "nil", ""},
+                {"ignoreIfNone", "false", ""}});
+}
+
+// Spawn closet: the game's OutfitSelect (a closet button) with its button marker put at the camera
+// (GetCameraTransform once, then dropped to the floor by raycastButtonToFloor) and no region. Kept as "closet"; Remove
+// switches it off. Lua can't read positions, so the camera is the only place a marker can be put near you.
+void SpawnCloset() {
+    std::string cam = EventLua("", "GetCameraTransform", {{"target", "OffsetLab.closetM", ""}, {"fireOnce", "true", ""}});
+    std::string closet = EventLua("closet", "OutfitSelect",
+                                  {{"closet", "true", ""}, {"buttonPos", "OffsetLab.closetM", ""},
+                                   {"raycastButtonToFloor", "true", ""}, {"avatarRegion", "nil", ""},
+                                   {"persistPreviewRegion", "nil", ""}, {"showAllPurchased", "false", ""},
+                                   {"showAllPurchasedType", Quote("kOutfitSlot_Body"), "0"}, {"onlyOneTab", "false", ""},
+                                   {"shopName", "\"\"", ""}, {"lightingIntensity", "1.0", ""}});
+    if (cam.empty() || closet.empty()) return;
+    if (Run("Closet spawned under the camera", std::string(kPrelude) +
+                                                   "OffsetLab.closetM = OffsetLab.closetM or game:markerBarn():CreateMarker(0)\n" +
+                                                   cam + closet,
+            "closet"))
+        X.closet = true;
+}
+
+void EnergySection() {
+    Section("ENERGY", "Your cape's energy (the light used to fly).");
+    ImGui::TextUnformatted("Charge energy");
+    Dim("Adds this much energy at once (AvatarChargeEnergy; the game's energy units, 1 = one wedge).");
+    Slider("charge", &X.charge, 0.1f, 20.f, 1.f, "%.1f");
+    if (ImGui::Button("Charge", ImVec2(Px(200), 0)))
+        StartEvent("Charged " + Num(X.charge), "charge", "AvatarChargeEnergy",
+                   {{"chargeRate", "0", ""}, {"addAmount", Num(X.charge), ""}, {"duration", "0", ""},
+                    {"glow", "true", ""}, {"onlyChargeWhenNotUsing", "false", ""}, {"chargeBreath", "false", ""}});
+    if (Toggle("Infinite energy", &X.infEnergy,
+               "Always charging, as if next to a light, and no drain in the rain (the game's auto-charge and "
+               "no-rain-drain switches). Off: both back to normal.")) {
+        bool ok = SetSwitch("Auto charge", kAutoChargeSwitch, X.infEnergy);
+        if (ok && !SetSwitch("No rain drain", kRainDrainSwitch, X.infEnergy)) {
+            SetSwitch("Auto charge", kAutoChargeSwitch, !X.infEnergy);
+            ok = false;
+        }
+        if (!ok) X.infEnergy = !X.infEnergy;
+    }
+    if (Toggle("Infinite oxygen", &X.infOxygen,
+               "Breath under water kept full every frame (AvatarSetEnergy: set breath, continuous). Off: normal "
+               "breathing.")) {
+        if (X.infOxygen)
+            StartEvent("Infinite oxygen on", "oxygen", "AvatarSetEnergy",
+                       {{"value", "1000", ""}, {"increment", "false", ""}, {"setArmor", "false", ""},
+                        {"setBreath", "true", ""}, {"setEnergy", "false", ""}, {"setEnergyCapMult", "false", "0"},
+                        {"continuous", "true", ""}});
+        else
+            StopEvent("Infinite oxygen off", "oxygen");
+    }
+
+    Section("LIFE", nullptr);
+    if (Toggle("Invincibility", &X.invincible,
+               "Damage can't take your light or breath (the game's own invincibility switch: energy only goes up, "
+               "breath stays full). Falling out of the world still resets you. Off: normal.")) {
+        if (!SetSwitch("Invincibility", kInvincibleSwitch, X.invincible)) X.invincible = !X.invincible;
+    }
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    if (ImGui::Button("Revive avatar", ImVec2(bw, Dp(44)))) GameFunction("Revive avatar", "ReviveAvatar", "revive");
+    ImGui::SameLine();
+    if (ImGui::Button("Break elder mask", ImVec2(bw, Dp(44))))
+        GameFunction("Elder mask broken", "BreakElderArmor", "eldermask");
+    ImGui::SameLine();
+    if (ImGui::Button("Restore elder mask", ImVec2(bw, Dp(44))))
+        GameFunction("Elder mask restored", "RepairElderArmor", "eldermask");
+    Dim("The game's own debug commands ReviveAvatar(game), BreakElderArmor(game) and RepairElderArmor(game) "
+        "(experimental: if this build doesn't have one, the Log says so).");
+}
+
+void ModesSection() {
+    Section("AVATAR MODES", nullptr);
+    if (Toggle("Mini mode (experimental)", &X.micro,
+               "Everyone looks tiny, on your screen only (SetAvatarMicroMode: its update shrinks every avatar each "
+               "frame while it runs). Off: switched off, everyone back to normal size.")) {
+        if (X.micro) StartEvent("Mini mode on", "micro", "SetAvatarMicroMode", {});
+        else StopEvent("Mini mode off", "micro");
+    }
+    if (Toggle("Broom mode (experimental)", &X.broom,
+               "Your avatar is shown as the game's Broomstick (AudienceSettings: replace your avatar with that "
+               "look). Off: your own avatar back.")) ApplyAudience();
+    NotPossible("Swim on ground",
+                "The game swims only inside its water volumes; no event or Lua function switches the avatar to "
+                "swimming elsewhere, and the avatar's water check hasn't been found and verified for 0.35.2.");
+    NotPossible("Swim through air", "Same reason as Swim on ground.");
+}
+
+void ItemsSection() {
+    Section("GLOWSTICK MODE", "Your avatar glows in one colour, or the shifting rainbow (AvatarRainbowParty). One at a "
+                              "time; Clear switches it off.");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
+    for (int i = 0; i < (int)(sizeof kGlowColors / sizeof kGlowColors[0]); i++) {
+        if (i % 5) ImGui::SameLine();
+        bool on = X.glowstick == i;
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+        if (ImGui::Button(kGlowColors[i].label, ImVec2(bw, 0)) && !on) Glowstick(i);
+        if (on) ImGui::PopStyleColor();
+    }
+    if (ImGui::Button("Clear##glowstick", ImVec2(Px(200), 0))) Glowstick(-1);
+
+    static const char* const kGlows[] = {"glow", "glow_rainbow", "glow_tgc", "hairtint", "hairtint_rainbow"};
+    Section("GLOW", "The game's glow spells (GrantSpell, local, until cleared). One at a time: choosing another "
+                    "removes the one before; Clear removes it (RemoveSpell).");
+    SpellRow(kGlows, sizeof kGlows / sizeof kGlows[0], X.glowOn, "glow", "Glow cleared");
+
+    static const char* const kWalks[] = {"ground_trail_rainbow", "ground_trail_star", "foot_trail_flower",
+                                         "foot_trail_rose", "bloom_rose_trail", "bloom_sakura", "butterfly_pastel",
+                                         "trail", "trail_bicolor", "trail_rainbow"};
+    Section("WALK EFFECTS", "Trails and footprints (the game's trail spells; the last three are flight trails). "
+                            "One at a time, Clear removes it.");
+    SpellRow(kWalks, sizeof kWalks / sizeof kWalks[0], X.walkOn, "walk", "Walk effect cleared");
+
+    Section("DYE OUTFITS", "Dyes what you're wearing, on your screen (AvatarSetOutfitDye; temporary: your own dyes "
+                           "come back when your outfit loads again, e.g. after a level change).");
+    if (!X.dyesRead && GameBase()) {
+        X.dyesRead = true;
+        for (const auto& o : EnumOptions("PlacePlaceable", "primaryDye")) {
+            std::string n = o.rfind("kDyeColor_", 0) == 0 ? o.substr(10) : o;
+            n = Lower(n);
+            if (n.empty() || n == "none" || n.find("count") != std::string::npos) continue;
+            X.dyes.push_back(n);
+        }
+    }
+    static const char* const kSlotLabels[] = {"All slots", "Body", "Cape", "Hair", "Hat", "Mask",
+                                              "Face", "Neck", "Horn", "Feet", "Prop"};
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f - 4);
+    if (ImGui::BeginCombo("##dyeslot", kSlotLabels[X.dyeSlot])) {
+        for (int i = 0; i < 11; i++)
+            if (ImGui::Selectable(kSlotLabels[i], i == X.dyeSlot)) X.dyeSlot = i;
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    static const char* const kRegions[] = {"Primary colour", "Secondary colour"};
+    if (ImGui::BeginCombo("##dyeregion", kRegions[X.dyeRegion])) {
+        for (int i = 0; i < 2; i++)
+            if (ImGui::Selectable(kRegions[i], i == X.dyeRegion)) X.dyeRegion = i;
+        ImGui::EndCombo();
+    }
+    if (ImGui::Button("Random", ImVec2(Px(200), 0))) Dye("", true, false);
+    ImGui::SameLine();
+    if (ImGui::Button("Remove dye", ImVec2(Px(200), 0))) Dye("", false, true);
+    if (X.dyes.empty()) {
+        Dim("The dye colours couldn't be read from the game yet.");
+    } else if (ImGui::BeginChild("##dyes", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 6.5f), ImGuiChildFlags_Border)) {
+        float dw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+        for (size_t i = 0; i < X.dyes.size(); i++) {
+            if (i % 3) ImGui::SameLine();
+            ImGui::PushID((int)i);
+            if (ImGui::Button(X.dyes[i].c_str(), ImVec2(dw, 0))) Dye(X.dyes[i], false, false);
+            ImGui::PopID();
+        }
+    }
+    if (!X.dyes.empty()) {
+        TouchScroll();
+        ImGui::EndChild();
+    }
+
+    Section("DYE MENU", nullptr);
+    if (ImGui::Button("Open dye menu", ImVec2(Px(300), 0)))
+        GameFunction("Dye menu opened", "OpenCraftingMenu", "dyemenu");
+    Dim("The dye station's menu, anywhere (the game's OpenCraftingMenu(game)). A button, not a toggle: the game has no "
+        "call that closes it from outside, so close it with its own button. Dyeing there is real (the server spends "
+        "your dyes).");
+
+    Section("CLOSET", nullptr);
+    if (ImGui::Button("Spawn closet", ImVec2(Px(250), 0))) SpawnCloset();
+    ImGui::SameLine();
+    if (ImGui::Button("Remove closet", ImVec2(Px(250), 0)) && X.closet)
+        StopEvent("Closet removed", "closet"), X.closet = false;
+    Dim("Experimental: a closet button on the ground under the camera, near you (OutfitSelect as a closet, its button "
+        "marker put at the camera). Gone after a level change.");
+
+    Section("PROPS", nullptr);
+    NotPossible("Bucket brigade",
+                "The bucket is a prop event (Bucket, an AvatarPropEvent) that the game starts from an equipped bucket "
+                "prop; started from Lua there's no prop for it to act on, and your own prop couldn't be put back "
+                "exactly when switched off.");
+    NotPossible("Take out candle (red / white)",
+                "No event or Lua function makes your own avatar take out its candle: Npc_TakeOutFlame works only on "
+                "NPCs, and the avatar's candle follows your input.");
+}
+
+void SocialSection() {
+    Section("SOCIAL", nullptr);
+    if (Toggle("Audience mode (experimental)", &X.audience,
+               "The audience reaction menu outside an event (AudienceSettings: show reaction menu, no reservation). "
+               "Off: the game's normal audience settings back.")) ApplyAudience();
+    if (Toggle("Read all messages", &X.readAll,
+               "Shows the text of chat from people you haven't befriended (and tables you're not at) instead of "
+               "\"...\": the chat bubble's \"may show text\" check (0x1478CB0, 0x1478CE4) always says yes. Your screen "
+               "only. Off: the game's code put back.")) {
+        bool ok = SetCodePatch(kReadPatches[0], X.readAll);
+        if (ok && !SetCodePatch(kReadPatches[1], X.readAll)) {
+            SetCodePatch(kReadPatches[0], !X.readAll);
+            ok = false;
+        }
+        if (!ok) X.readAll = !X.readAll;
+        else Log("Read all messages %s", X.readAll ? "on" : "off");
+    }
+    ImGui::TextUnformatted("Speak to all");
+    Dim("Says this over your avatar, like the developers' interview messages (AvatarSpeak). Experimental: who else "
+        "sees it is up to the game and your server.");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(150));
+    ImGui::InputTextWithHint("##speak", "message", X.speak, sizeof X.speak);
+    ImGui::SameLine();
+    if (ImGui::Button("Send", ImVec2(Px(130), 0)) && X.speak[0])
+        StartEvent(std::string("Said: ") + X.speak, "speak", "AvatarSpeak",
+                   {{"message", Quote(X.speak), ""}, {"localizeMessage", "false", ""}});
+
+    Section("UNLOCKS", nullptr);
+    if (Toggle("Unlock all (local only)", &X.unlockAll,
+               "Everything the game checks with its \"has unlock\" (emotes, outfits, quests, spells...) counts as "
+               "unlocked on your device (0xDFC144 always returns yes). Local only: the server still decides anything "
+               "it checks (wearing, buying, saving). Off: the game's code put back; you may need a level change to "
+               "see your real unlocks again.")) {
+        if (!SetCodePatch(kUnlockPatch, X.unlockAll)) X.unlockAll = !X.unlockAll;
+        else Log("Unlock all %s", X.unlockAll ? "on" : "off");
+    }
+}
+
 int gSub = 0;
 
 }  // namespace
@@ -1267,6 +1677,10 @@ void FeaturesTick() {
         M.crawlStopAt = 0;
         if (!F.crawl) StopEvent("", "crawl"), StopEvent("", "stand");
     }
+    if (X.audienceStopAt > 0 && t >= X.audienceStopAt) {
+        X.audienceStopAt = 0;
+        if (!X.audience && !X.broom) StopEvent("", "audience");
+    }
     if (M.tpose && M.tposeHoldAt > 0 && t >= M.tposeHoldAt) {
         M.tposeHoldAt = 0;
         M.tposeHold = true;
@@ -1278,25 +1692,30 @@ void FeaturesTab() {
     if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world to use these.");
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
-    static const char* kSubs[] = {"Player", "Transform", "Outfits", "Emotes", "Camera", "World", "Shout"};
+    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items",
+                                  "Emotes", "Camera", "World",     "Social",  "Shout"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone
-    for (int i = 0; i < 7; i++) {
-        if (i % 4) ImGui::SameLine();
+    const float subW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
+    for (int i = 0; i < 10; i++) {
+        if (i % 5) ImGui::SameLine();
         bool sel = gSub == i;
         if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
-        if (ImGui::Button(kSubs[i], ImVec2((ImGui::GetContentRegionAvail().x - Px(30)) / 4, Dp(44))) && !sel) gSub = i;
+        if (ImGui::Button(kSubs[i], ImVec2(subW, Dp(44))) && !sel) gSub = i;
         if (sel) ImGui::PopStyleColor();
     }
     ImGui::Separator();
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
         switch (gSub) {
             case 0: PlayerSection(inWorld); break;
-            case 1: TransformSection(); break;
-            case 2: OutfitsSection(); break;
-            case 3: EmotesSection(); break;
-            case 4: CameraSection(); break;
-            case 5: WorldSection(); break;
-            case 6: ShoutSection(); break;
+            case 1: EnergySection(); break;
+            case 2: TransformSection(); ModesSection(); break;
+            case 3: OutfitsSection(); break;
+            case 4: ItemsSection(); break;
+            case 5: EmotesSection(); break;
+            case 6: CameraSection(); break;
+            case 7: WorldSection(); break;
+            case 8: SocialSection(); break;
+            case 9: ShoutSection(); break;
         }
     }
     TouchScroll();
