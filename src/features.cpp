@@ -203,6 +203,7 @@ std::vector<Set> GameDefaults(const char* type) {
             case kObject: out.push_back({name, "nil", ""}); break;
             default:
                 if (st.objTypeAddr || name == "npc" || name == "npcToMimic") out.push_back({name, "nil", ""});
+                else if (!def.empty() && def[0] == 'k') out.push_back({name, Quote(def), ""});
         }
     }
     return out;
@@ -230,6 +231,8 @@ bool OneShot(const char* type) {
         "GetEmoteFx", "BreakEmoteFx", "StarBlingFx",
         // 0.16.2: account event that fires once (adds currency, then the game deletes it)
         "AccountAddCurrency",
+        // 0.16.2: purchase animation, stops itself when drawn
+        "PlayPurchaseFX",
     };
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
@@ -1610,7 +1613,7 @@ void ItemsSection() {
     {
         struct Fx { const char* label; const char* type; };
         static const Fx kFx[] = {{"New emote", "GetEmoteFx"}, {"Emote break", "BreakEmoteFx"},
-                                 {"Winged light star bling", "StarBlingFx"}};
+                                 {"Winged light star bling", "StarBlingFx"}, {"Purchase", "PlayPurchaseFX"}};
         for (int i = 0; i < (int)IM_ARRAYSIZE(kFx); i++) {
             if (i % 2) ImGui::SameLine();
             if (ImGui::Button(kFx[i].label, ImVec2(Px(250), 0)))
@@ -1624,9 +1627,6 @@ void ItemsSection() {
     {
         struct Cmd { const char* label; const char* lua; };
         static const Cmd kCmd[] = {
-            {"Purchase", "local e = game:eventBarn():AddEventByMetaName(\"PlayPurchaseFX\")\n"
-                         "if not e then error(\"PlayPurchaseFX isn't in this build\") end\n"
-                         "pcall(function() e:invisibleItem(false) end)\ne:Start()\n"},
             {"Level up", "if type(LevelUp) ~= \"function\" then error(\"LevelUp isn't in this build\") end\nLevelUp(game)\n"},
             {"Cape upgrade", "if type(CapeUpgrade) ~= \"function\" then error(\"CapeUpgrade isn't in this build\") end\n"
                              "CapeUpgrade(game)\n"},
@@ -1646,7 +1646,18 @@ void ItemsSection() {
     ImGui::Checkbox("Server requests on (off at every start)##cur", &M.currencyServer);
     if (!M.currenciesRead && GameBase()) {
         M.currenciesRead = true;
-        M.currencies = EnumOptions("AccountAddCurrency", "currencyType");
+        // currencyType is kUnknown in the type table (gen_offsets can't detect it as an enum),
+        // so EnumOptions returns nothing. The game accepts these names via e:currencyType("name").
+        M.currencies = {
+            "kCurrencyType_Candle", "kCurrencyType_Heart", "kCurrencyType_Wax",
+            "kCurrencyType_SeasonCandle", "kCurrencyType_SeasonHeart", "kCurrencyType_SeasonWax",
+            "kCurrencyType_EventCandle", "kCurrencyType_RainbowCandle", "kCurrencyType_RainbowHeart",
+            "kCurrencyType_DawnHeart", "kCurrencyType_DayHeart", "kCurrencyType_DuskHeart",
+            "kCurrencyType_NightHeart", "kCurrencyType_RainHeart", "kCurrencyType_StormHeart",
+            "kCurrencyType_SunsetHeart", "kCurrencyType_HeartWax",
+            "kCurrencyType_SeasonPassToken", "kCurrencyType_Prestige", "kCurrencyType_PrestigeWax",
+            "kCurrencyType_DayTemple", "kCurrencyType_StormKey", "kCurrencyType_Vip",
+        };
     }
     if (!M.currencies.empty()) {
         if (M.curType >= (int)M.currencies.size()) M.curType = 0;
