@@ -228,6 +228,8 @@ bool OneShot(const char* type) {
         // 0.16.0 (Reward animations): screen Fx that stop themselves when drawn (GetEmoteFx update 0x1F6CCA0 and
         // BreakEmoteFx 0x1F6367C end in 0x1720558; StarBlingFx 0x18FA6EC in 0x171F82C)
         "GetEmoteFx", "BreakEmoteFx", "StarBlingFx",
+        // 0.16.2: account event that fires once (adds currency, then the game deletes it)
+        "AccountAddCurrency",
     };
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
@@ -596,6 +598,10 @@ struct More {
     // server (off at every start)
     bool server = false;
     bool currencyServer = false;
+    // currency
+    std::vector<std::string> currencies;
+    bool currenciesRead = false;
+    int curType = 0;
     // animation
     bool pause = false;
     bool tpose = false;
@@ -1638,21 +1644,28 @@ void ItemsSection() {
     Dim("The game's AccountAddCurrency with the amount 10: it plays the gain animation for that currency. It's an "
         "account event, so it sends an \"add 10\" request to the server you're connected to.");
     ImGui::Checkbox("Server requests on (off at every start)##cur", &M.currencyServer);
-    {
-        static const char* kCur[] = {"kCurrencyType_Candle", "kCurrencyType_Heart", "kCurrencyType_SeasonCandle",
-                                     "kCurrencyType_SeasonHeart", "kCurrencyType_RainbowCandle",
-                                     "kCurrencyType_EventCandle", "kCurrencyType_SeasonWax", "kCurrencyType_StormKey",
-                                     "kCurrencyType_SeasonPassToken"};
-        static int cur = 0;
+    if (!M.currenciesRead && GameBase()) {
+        M.currenciesRead = true;
+        M.currencies = EnumOptions("AccountAddCurrency", "currencyType");
+    }
+    if (!M.currencies.empty()) {
+        if (M.curType >= (int)M.currencies.size()) M.curType = 0;
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-        ImGui::Combo("##cur", &cur, kCur, IM_ARRAYSIZE(kCur));
+        if (ImGui::BeginCombo("##cur", M.currencies[M.curType].c_str())) {
+            for (int i = 0; i < (int)M.currencies.size(); i++)
+                if (ImGui::Selectable(M.currencies[i].c_str(), i == M.curType)) M.curType = i;
+            ImGui::EndCombo();
+        }
         ImGui::SameLine();
         ImGui::BeginDisabled(!M.currencyServer);
         if (ImGui::Button("Play##cur", ImVec2(-1, 0)))
-            StartEvent(std::string("Currency effect ") + (kCur[cur] + 14), "currency", "AccountAddCurrency",
-                       {{"value", "10", ""}, {"currencyType", Quote(kCur[cur]), std::to_string(cur), true},
+            StartEvent(std::string("Currency effect ") + M.currencies[M.curType], "", "AccountAddCurrency",
+                       {{"value", "10", ""}, {"currencyType", Quote(M.currencies[M.curType]), std::to_string(M.curType), true},
                         {"name", "\"\"", ""}});
         ImGui::EndDisabled();
+    } else {
+        Dim("The currency type list couldn't be read from the game yet (enter the world and open this again).");
+        if (ImGui::Button("Try again##cur")) M.currenciesRead = false;
     }
 
     Section("PROPS", nullptr);
