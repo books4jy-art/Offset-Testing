@@ -6,7 +6,10 @@
 // with the new value when you let go; every slider has a reset button that puts the game's normal behaviour back.
 #include "lab.h"
 
+#include "dobby.h"
+
 #include <algorithm>
+#include <atomic>
 #include <cinttypes>
 #include <cstdarg>
 #include <cmath>
@@ -27,6 +30,78 @@ namespace {
 const ImVec4 kSky300(0.490f, 0.827f, 0.988f, 1.f);
 const ImVec4 kRed300(0.988f, 0.647f, 0.647f, 1.f);
 const ImVec4 kAmber300(0.988f, 0.827f, 0.302f, 1.f);
+
+// ---------------------------------------------------------------- AccountAddCurrency native hook
+// currencyType is kUnknown in the type table: the game has no Lua setter for it, so we write the byte directly into the
+// event object before its handler reads it. The handler at 0xf6c620 reads currencyType as uint8_t from event+0x4C.
+constexpr uintptr_t kAddCurrencyHandler = 0xF6C620;
+constexpr uint32_t kAddCurrencyFirstInstr = 0xA9BD7BFD;  // stp x29, x30, [sp, #-0x30]!
+
+struct CurrencyEntry { const char* name; uint8_t value; };
+static const CurrencyEntry kCurrencyMap[] = {
+    {"kCurrencyType_Candle", 1},
+    {"kCurrencyType_Vip", 2},
+    {"kCurrencyType_Heart", 3},
+    {"kCurrencyType_Wax", 4},
+    {"kCurrencyType_RainbowCandle", 5},
+    {"kCurrencyType_RainbowHeart", 6},
+    {"kCurrencyType_DayTemple", 7},
+    {"kCurrencyType_StormKey", 8},
+    {"kCurrencyType_DawnHeart", 9},
+    {"kCurrencyType_DayHeart", 10},
+    {"kCurrencyType_RainHeart", 11},
+    {"kCurrencyType_DuskHeart", 12},
+    {"kCurrencyType_SunsetHeart", 13},
+    {"kCurrencyType_NightHeart", 14},
+    {"kCurrencyType_StormHeart", 15},
+    {"kCurrencyType_SeasonCandle", 16},
+    {"kCurrencyType_SeasonWax", 17},
+    {"kCurrencyType_Prestige", 18},
+    {"kCurrencyType_PrestigeWax", 19},
+    {"kCurrencyType_SeasonPassToken", 20},
+    {"kCurrencyType_HeartWax", 21},
+    {"kCurrencyType_SeasonHeart", 22},
+    {"kCurrencyType_EventCandle", 23},
+};
+
+static std::atomic<uint8_t> gPendingCurrencyType{0};
+static int gCurrencyHookState = 0;
+
+void OnAddCurrencyHandler(void*, DobbyRegisterContext* ctx) {
+    uint8_t pending = gPendingCurrencyType.exchange(0, std::memory_order_acq_rel);
+    if (pending) {
+        auto* event = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(ctx->general.regs.x0));
+        event[0x4C] = pending;
+    }
+}
+
+bool InstallCurrencyHook() {
+    if (gCurrencyHookState == 1) return true;
+    if (gCurrencyHookState == -1) return false;
+    uintptr_t base = GameBase();
+    if (!base) return false;
+    uint32_t code = 0;
+    if (!ReadMemory(base + kAddCurrencyHandler, &code, 4) || code != kAddCurrencyFirstInstr) {
+        Log("Currency: handler at 0x%X has unexpected code (%08X, want %08X)",
+            (unsigned)kAddCurrencyHandler, code, kAddCurrencyFirstInstr);
+        gCurrencyHookState = -1;
+        return false;
+    }
+    if (DobbyInstrument(reinterpret_cast<void*>(base + kAddCurrencyHandler), OnAddCurrencyHandler) != 0) {
+        Log("Currency: couldn't hook 0x%X", (unsigned)kAddCurrencyHandler);
+        gCurrencyHookState = -1;
+        return false;
+    }
+    Log("Currency: hooked AccountAddCurrency handler at 0x%X", (unsigned)kAddCurrencyHandler);
+    gCurrencyHookState = 1;
+    return true;
+}
+
+uint8_t CurrencyValue(const std::string& name) {
+    for (const auto& e : kCurrencyMap)
+        if (name == e.name) return e.value;
+    return 0;
+}
 
 void Dim(const char* fmt, ...) IM_FMTARGS(1);
 void Dim(const char* fmt, ...) {
@@ -203,7 +278,6 @@ std::vector<Set> GameDefaults(const char* type) {
             case kObject: out.push_back({name, "nil", ""}); break;
             default:
                 if (st.objTypeAddr || name == "npc" || name == "npcToMimic") out.push_back({name, "nil", ""});
-                else if (!def.empty() && def[0] == 'k') out.push_back({name, Quote(def), ""});
         }
     }
     return out;
@@ -1640,24 +1714,14 @@ void ItemsSection() {
         }
     }
     ImGui::Spacing();
-    ImGui::TextUnformatted("Currency gain effect (experimental)");
-    Dim("The game's AccountAddCurrency with the amount 10: it plays the gain animation for that currency. It's an "
-        "account event, so it sends an \"add 10\" request to the server you're connected to.");
+    ImGui::TextUnformatted("Currency gain (experimental)");
+    Dim("The game's AccountAddCurrency with the amount 10. It's an account event: it sends an \"add 10\" request to the "
+        "server you're connected to and plays the gain animation for that currency.");
     ImGui::Checkbox("Server requests on (off at every start)##cur", &M.currencyServer);
     if (!M.currenciesRead && GameBase()) {
         M.currenciesRead = true;
-        // currencyType is kUnknown in the type table (gen_offsets can't detect it as an enum),
-        // so EnumOptions returns nothing. The game accepts these names via e:currencyType("name").
-        M.currencies = {
-            "kCurrencyType_Candle", "kCurrencyType_Heart", "kCurrencyType_Wax",
-            "kCurrencyType_SeasonCandle", "kCurrencyType_SeasonHeart", "kCurrencyType_SeasonWax",
-            "kCurrencyType_EventCandle", "kCurrencyType_RainbowCandle", "kCurrencyType_RainbowHeart",
-            "kCurrencyType_DawnHeart", "kCurrencyType_DayHeart", "kCurrencyType_DuskHeart",
-            "kCurrencyType_NightHeart", "kCurrencyType_RainHeart", "kCurrencyType_StormHeart",
-            "kCurrencyType_SunsetHeart", "kCurrencyType_HeartWax",
-            "kCurrencyType_SeasonPassToken", "kCurrencyType_Prestige", "kCurrencyType_PrestigeWax",
-            "kCurrencyType_DayTemple", "kCurrencyType_StormKey", "kCurrencyType_Vip",
-        };
+        M.currencies.clear();
+        for (const auto& e : kCurrencyMap) M.currencies.push_back(e.name);
     }
     if (!M.currencies.empty()) {
         if (M.curType >= (int)M.currencies.size()) M.curType = 0;
@@ -1669,13 +1733,19 @@ void ItemsSection() {
         }
         ImGui::SameLine();
         ImGui::BeginDisabled(!M.currencyServer);
-        if (ImGui::Button("Play##cur", ImVec2(-1, 0)))
-            StartEvent(std::string("Currency effect ") + M.currencies[M.curType], "", "AccountAddCurrency",
-                       {{"value", "10", ""}, {"currencyType", Quote(M.currencies[M.curType]), std::to_string(M.curType), true},
-                        {"name", "\"\"", ""}});
+        if (ImGui::Button("Play##cur", ImVec2(-1, 0))) {
+            uint8_t cv = CurrencyValue(M.currencies[M.curType]);
+            if (cv && InstallCurrencyHook()) {
+                gPendingCurrencyType.store(cv, std::memory_order_release);
+                StartEvent(std::string("Currency +10 ") + M.currencies[M.curType], "", "AccountAddCurrency",
+                           {{"value", "10", ""}, {"name", "\"\"", ""}});
+            } else if (!cv) {
+                Log("Currency: unknown type %s", M.currencies[M.curType].c_str());
+            }
+        }
         ImGui::EndDisabled();
     } else {
-        Dim("The currency type list couldn't be read from the game yet (enter the world and open this again).");
+        Dim("Enter the world and open this again.");
         if (ImGui::Button("Try again##cur")) M.currenciesRead = false;
     }
 
