@@ -221,7 +221,9 @@ bool OneShot(const char* type) {
         // 0.12.1: candle events, same (AvatarSetCandleState 0x11F5A60, SocialGift 0x1EB9EB4 end in 0x171F82C)
         "AvatarSetCandleState", "SocialGift",
         // 0.14.0: stops itself when its fireOnce (+0x26) is set (update 0x124BE88); only ever started with it
-        "AvatarExitFlight"};
+        "AvatarExitFlight",
+        // 0.15.0 (Spawn tab): stops itself once every start position's star has landed (update 0x205DCDC, 0x205E5AC)
+        "StarFallShower"};
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
     return false;
@@ -2247,6 +2249,17 @@ bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std:
     for (const auto& v : values) sets.push_back({v.first, v.second, ""});
     return StartEvent("Replay " + name, "", name.c_str(), sets);
 }
+
+// For the Spawn tab (spawn.cpp): the same event Lua the features use (the game's defaults first, then these values;
+// kept as OffsetLab[key] unless a one-shot), the prelude it goes after, and the game's UI icons.
+std::string FeatureEventLua(const std::string& key, const char* type,
+                            const std::vector<std::pair<std::string, std::string>>& values) {
+    std::vector<Set> sets;
+    for (const auto& v : values) sets.push_back({v.first, v.second, ""});
+    return EventLua(key, type, sets);
+}
+const char* FeatureLuaPrelude() { return kPrelude; }
+bool GameIcon(const std::string& name, float size) { return DrawIcon(name, size); }
 
 // Repeating actions; called every frame from Draw, whichever tab is open.
 void FeaturesTick() {

@@ -652,6 +652,7 @@ void QuickSection() {
 }  // namespace
 
 bool LocalAvatarPos(float out[3], float* yaw) { return AvatarPos(out, yaw); }
+std::string CurrentLevelId() { return CurrentLevel(); }
 
 // Freeze in place: the same AvatarSetPos move as Teleport, to where you were, with momentum killed and hand-holds
 // kept; nothing logged (it repeats) and Back isn't touched.

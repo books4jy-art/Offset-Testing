@@ -1425,6 +1425,7 @@ void Draw(bool* open) {
     (void)open;
     LoadPrefs();
     FeaturesTick();  // repeating features keep going while the panel is collapsed
+    SpawnTick();     // results of the Spawn tab's game-thread calls
     RecorderPump();  // the recorder too
     ImGuiStyle saved = ImGui::GetStyle();  // the theme is only for Offset Lab's windows, not Canvas's
     ImGuiIO& io = ImGui::GetIO();
@@ -1545,8 +1546,8 @@ void Draw(bool* open) {
     ImGui::Separator();
 
     static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets",
-                                  "Recorder"};
-    static const int kOrder[] = {5, 7, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
+                                  "Recorder",       "Spawn"};
+    static const int kOrder[] = {5, 8, 7, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
     if (ImGui::BeginTabBar("##tabs")) {
         for (int i : kOrder) {
             ImGuiTabItemFlags f = (S.openTab == i) ? ImGuiTabItemFlags_SetSelected : 0;
@@ -1561,6 +1562,7 @@ void Draw(bool* open) {
                     case 5: FeaturesTab(); break;
                     case 6: OtherOffsetsTab(); break;
                     case 7: RecorderTab(); break;
+                    case 8: SpawnTab(); break;
                 }
                 ImGui::EndTabItem();
             }

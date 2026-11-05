@@ -108,6 +108,13 @@ int RecordableSettings(int type);  // how many of a type's settings the recorder
 // features.cpp: starts an event the way features do (the game's defaults first, then these name/Lua value pairs).
 // Refuses anything that isn't an event. Not kept: it can't be switched off from the mod.
 bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std::string>>& values);
+// features.cpp, for the Spawn tab: the Lua that starts event `type` the way features do (after FeatureLuaPrelude(),
+// kept as OffsetLab[key] unless it's a one-shot; "" if it mustn't be fired), and one of the game's UI icons (false when
+// the game has none by that name).
+std::string FeatureEventLua(const std::string& key, const char* type,
+                            const std::vector<std::pair<std::string, std::string>>& values);
+const char* FeatureLuaPrelude();
+bool GameIcon(const std::string& name, float size);
 
 // ---- small files next to the mod (Canvas's files folder) ----
 std::string DataPath(const char* name);        // "" if the folder can't be found
@@ -123,8 +130,11 @@ void Draw(bool* open);
 void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders, buttons)
 void FeaturesTick();     // features.cpp: repeating actions, every frame
 void TeleportSection();  // teleport.cpp: the Features tab's Teleport sub-tab
+void SpawnTab();         // spawn.cpp: the Spawn tab (creature schools, shards, developer school switch)
+void SpawnTick();        // spawn.cpp: results of the game-thread calls, every frame
 bool LocalAvatarPos(float out[3], float* yaw = nullptr);  // teleport.cpp: your avatar's position (read natively)
 bool HoldAvatarAt(const float pos[3]);  // teleport.cpp: AvatarSetPos to pos, quietly (queue key "freeze")
+std::string CurrentLevelId();  // teleport.cpp: the current level id ("" if unreadable)
 void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
 void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
 float Px(float v);
