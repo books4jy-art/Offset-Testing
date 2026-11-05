@@ -97,6 +97,7 @@ bool SafeToFire(const char* type, bool allowUnlisted = false) {
 struct Set {
     std::string name, value;  // value as Lua code
     std::string fallback;     // tried when value isn't accepted (enums: the option's number)
+    bool required = false;    // not accepted: the event isn't started (a script error instead)
 };
 
 // Saved events are dropped when the level changes: the game deletes them, and using a deleted event's handle
@@ -247,6 +248,8 @@ std::string EventLua(const std::string& keyIn, const char* type, const std::vect
         if (!x.fallback.empty())
             s += "if not pcall(function() e:" + x.name + "(" + x.fallback + ") end) then bad[#bad+1] = \"" + x.name +
                  "\" end ";
+        else if (x.required)
+            s += "error(\"" + std::string(type) + ": " + x.name + " wasn't taken; not started\") ";
         else
             s += "bad[#bad+1] = \"" + x.name + "\" ";
         s += "end\n";
@@ -2253,11 +2256,26 @@ bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std:
 // For the Spawn tab (spawn.cpp): the same event Lua the features use (the game's defaults first, then these values;
 // kept as OffsetLab[key] unless a one-shot), the prelude it goes after, and the game's UI icons.
 std::string FeatureEventLua(const std::string& key, const char* type,
-                            const std::vector<std::pair<std::string, std::string>>& values) {
+                            const std::vector<std::pair<std::string, std::string>>& values,
+                            const std::vector<std::string>& required) {
     std::vector<Set> sets;
-    for (const auto& v : values) sets.push_back({v.first, v.second, ""});
+    for (const auto& v : values) {
+        bool req = false;
+        for (const auto& r : required) req |= r == v.first;
+        sets.push_back({v.first, v.second, "", req});
+    }
     return EventLua(key, type, sets);
 }
+bool SetInvincibility(bool on) {
+    if (X.invincible == on) {
+        uint8_t cur = 0xFF;
+        if (ReadByte(kInvincibleSwitch, cur) && cur == (on ? 1 : 0)) return true;
+    }
+    if (!SetSwitch("Invincibility", kInvincibleSwitch, on)) return false;
+    X.invincible = on;
+    return true;
+}
+bool InvincibilityOn() { return X.invincible; }
 const char* FeatureLuaPrelude() { return kPrelude; }
 bool GameIcon(const std::string& name, float size) { return DrawIcon(name, size); }
 

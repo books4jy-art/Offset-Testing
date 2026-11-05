@@ -111,10 +111,16 @@ bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std:
 // features.cpp, for the Spawn tab: the Lua that starts event `type` the way features do (after FeatureLuaPrelude(),
 // kept as OffsetLab[key] unless it's a one-shot; "" if it mustn't be fired), and one of the game's UI icons (false when
 // the game has none by that name).
+// required: settings that must be taken (else the script stops before Start, e.g. an object the event's start reads
+// without checking).
 std::string FeatureEventLua(const std::string& key, const char* type,
-                            const std::vector<std::pair<std::string, std::string>>& values);
+                            const std::vector<std::pair<std::string, std::string>>& values,
+                            const std::vector<std::string>& required = {});
 const char* FeatureLuaPrelude();
 bool GameIcon(const std::string& name, float size);
+// features.cpp: the game's invincibility switch (Features > Energy), as its toggle sets it; false if not changed.
+bool SetInvincibility(bool on);
+bool InvincibilityOn();
 
 // ---- small files next to the mod (Canvas's files folder) ----
 std::string DataPath(const char* name);        // "" if the folder can't be found

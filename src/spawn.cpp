@@ -4,8 +4,10 @@
 // debug window ("Fish Schools": Create Test Birds / Mantas / ... / Clear Test School) creates in front of the camera.
 // The tab calls that same function on the game's main thread, so birds, mantas, butterflies, jellyfish, crabs, sky
 // kids and fish are made exactly as the developers' buttons make them. Shards and the darkstone rain are the game's
-// own events started from Lua, with markers placed around you. Everything the tab makes is local to your game and is
-// dropped by the game when the level changes.
+// own events started from Lua, with markers placed around you. The shard tornado and the crab burrow are events whose
+// start reads a settings object (ShardnadoParams, CrabParams): the tab makes those with the game's own Lua constructor
+// (every reflected type that isn't abstract gets a global table with new/delete/cast, 0x29AB5F0 -> new 0x29AC5B4).
+// Everything the tab makes is local to your game and is dropped by the game when the level changes.
 #include "lab.h"
 
 #include <atomic>
@@ -217,11 +219,28 @@ struct State {
     float rainRadius = 20, rainRate = 300;
     bool rainDrain = false;
     bool rainOn = false;
+    // shard tornado
+    int nadoShards = 16;     // ShardnadoParams numShards (the game's 16)
+    float nadoRadius = 10;   // maxRadius (minRadius is half of it: the game's 5 / 10)
+    float nadoScale = 1;     // shardScale
+    float nadoDist = 20;     // metres in front of you
+    bool nadoOn = false;
+    int nadosThisLevel = 0;
+    // crab burrow
+    int crabCount = 4;       // SpawnCrabs number (the game's 4)
+    float crabSize = 0.25f;  // CrabParams radius (the constructor's 0.25)
+    float crabDist = 4;      // metres in front of you
+    bool crabDark = false;   // darkCrab: they screech at you and knock you over
+    bool crabOn = false;
+    int crabsThisLevel = 0;
+    bool invincibleFirst = true;  // switch Invincibility on before a tornado or dark crabs
     std::string level;       // level the shard/rain flags belong to
 } T;
 
 constexpr int kMaxStarShowers = 6;  // per level: each keeps up to 8 markers until the level changes
 constexpr int kMaxShardFalls = 8;   // per level, the same
+constexpr int kMaxNados = 6;        // per level: each leaves a switched-off event and its params object until then
+constexpr int kMaxCrabSpawns = 8;   // per level: the crabs stay in the crab barn (32 at most, 0x1554BE8) until then
 
 bool Queue(const char* what, uintptr_t op) {
     if (!GameObject()) { Log("%s: enter the world first", what); return false; }
@@ -392,6 +411,122 @@ void RainOff(bool quiet = false) {
     T.rainOn = false;
 }
 
+// A point d metres in front of you (your facing; +z when it isn't known), at your height.
+bool InFront(float d, float out[3]) {
+    float me[3], yaw = 0;
+    if (!LocalAvatarPos(me, &yaw)) return false;
+    if (!std::isfinite(yaw) || std::fabs(yaw) > 100.f) yaw = 0;
+    out[0] = me[0] + d * std::sin(yaw);
+    out[1] = me[1];
+    out[2] = me[2] + d * std::cos(yaw);
+    return Sane(out[0]) && Sane(out[1]) && Sane(out[2]);
+}
+
+// A transform as the game's Lua writes it: rotation rows, then the translation row {x, y, z, 1}.
+std::string Transform(const float p[3]) {
+    char b[160];
+    snprintf(b, sizeof b, "{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {%.3f, %.3f, %.3f, 1}}", p[0], p[1], p[2]);
+    return b;
+}
+
+std::string Num(float v) {
+    char b[48];
+    snprintf(b, sizeof b, "%.3f", v);
+    return b;
+}
+
+// Lua making a settings object with the game's constructor into OffsetLab[slot] (then its setters), or a script error
+// (never a nil object: the events' starts read it unchecked).
+std::string ParamsLua(const char* type, const std::string& slot,
+                      const std::vector<std::pair<std::string, std::string>>& sets) {
+    std::string t = type;
+    std::string s = "do\nlocal P = " + t + "\n"
+                    "if type(P) ~= \"table\" or type(P.new) ~= \"function\" then error(\"" + t +
+                    ".new isn't in this game build\") end\n"
+                    "local p = P.new()\n"
+                    "if not p then error(\"" + t + ".new made nothing\") end\n";
+    for (const auto& x : sets) s += "p:" + x.first + "(" + x.second + ")\n";
+    return s + "OffsetLab[\"" + slot + "\"] = p\nend\n";
+}
+
+void MaybeInvincible(const char* what) {
+    if (T.invincibleFirst && !InvincibilityOn() && SetInvincibility(true))
+        Log("%s: Invincibility switched on first (Features > Energy to switch it off)", what);
+}
+
+// Shard tornado: Shardnado (settings: params at +0x30, transform at +0x40). Its start (0x1DF5C8C) copies params
+// numShards (+0x10) without checking params; its enable (0x1DF6DD4) adds it to the game's list and makes the shards
+// (FlyingRockA), its disable (0x1DF6BC0) takes it out again, and its update (0x1DF5CA8) never stops it. So it's kept as
+// "spNado" and Remove switches it off. ShardnadoParams.new(): not abstract (0x1DF90F8 returns 0), 0x30 bytes, every
+// field filled by its constructor (0x1DF9130); the tab still sets all six. Objects made with new have no __gc: the
+// game never frees them behind the event's back (they stay until the game quits; at most kMaxNados per level).
+void Shardnado() {
+    if (T.nadosThisLevel >= kMaxNados) {
+        Log("Shard tornado: %d in this level already (each stays until the level changes)", kMaxNados);
+        return;
+    }
+    float at[3];
+    if (!InFront(T.nadoDist, at)) { Log("Shard tornado: your position couldn't be read"); return; }
+    std::string slot = "spNadoP" + std::to_string(T.nadosThisLevel);
+    std::string params = ParamsLua("ShardnadoParams", slot,
+                                   {{"numShards", std::to_string(T.nadoShards)}, {"shardScale", Num(T.nadoScale)},
+                                    {"minOrbitRate", "0.3"}, {"maxOrbitRate", "0.6"},
+                                    {"minRadius", Num(T.nadoRadius * 0.5f)}, {"maxRadius", Num(T.nadoRadius)}});
+    std::string ev = FeatureEventLua("spNado", "Shardnado",
+                                     {{"SetTransform", Transform(at)}, {"params", "OffsetLab[\"" + slot + "\"]"}},
+                                     {"SetTransform", "params"});
+    if (ev.empty()) return;
+    MaybeInvincible("Shard tornado");
+    std::string s = std::string(FeatureLuaPrelude()) + "stop(\"spNado\")\n" + params + ev;
+    if (Run("Shard tornado " + std::to_string((int)T.nadoDist) + " m in front of you", s, "spNado")) {
+        T.nadoOn = true;
+        T.nadosThisLevel++;
+    }
+}
+
+void ShardnadoOff(bool quiet = false) {
+    int r = RunLua(std::string(FeatureLuaPrelude()) + "stop(\"spNado\")\n", "Shard tornado off", "spNado");
+    if (!quiet && r == 0) Log("Shard tornado removed");
+    T.nadoOn = false;
+}
+
+// Crab burrow: SpawnCrabs (params at +0x70, number, time, transform). Its start (0x1553C78) reads params +0xE5
+// (crabState) unchecked and asks the crab barn for `number` crabs with those params (0x1554BC0: none past 32, the
+// start skips a missing one); its update (0x1555DD8) brings them up out of the ground at the transform over `time`
+// and never stops the event; its disable (0x155038C) sets each of its crabs' enabled (+0xE8) to false, so they burrow
+// away. Kept as "spCrabs"; Remove switches it off. CrabParams.new(): not abstract (0x155E634), 0xF0 bytes, every field
+// filled by its constructor (0x155A0BC: object fields zeroed, darkCrab on); the tab sets darkCrab, radius and
+// forceGround. The crabs keep pointing at the params object, which is never deleted.
+void Crabs() {
+    if (T.crabsThisLevel >= kMaxCrabSpawns) {
+        Log("Crabs: %d burrows in this level already (their crabs stay until the level changes)", kMaxCrabSpawns);
+        return;
+    }
+    float at[3];
+    if (!InFront(T.crabDist, at)) { Log("Crabs: your position couldn't be read"); return; }
+    std::string slot = "spCrabP" + std::to_string(T.crabsThisLevel);
+    std::string params = ParamsLua("CrabParams", slot,
+                                   {{"darkCrab", T.crabDark ? "true" : "false"}, {"radius", Num(T.crabSize)},
+                                    {"forceGround", "true"}});
+    std::string ev = FeatureEventLua("spCrabs", "SpawnCrabs",
+                                     {{"SetTransform", Transform(at)}, {"number", std::to_string(T.crabCount)},
+                                      {"time", "1.5"}, {"params", "OffsetLab[\"" + slot + "\"]"}},
+                                     {"SetTransform", "params"});
+    if (ev.empty()) return;
+    if (T.crabDark) MaybeInvincible("Dark crabs");
+    std::string s = std::string(FeatureLuaPrelude()) + "stop(\"spCrabs\")\n" + params + ev;
+    if (Run(std::to_string(T.crabCount) + (T.crabDark ? " dark crabs" : " crabs") + " in front of you", s, "spCrabs")) {
+        T.crabOn = true;
+        T.crabsThisLevel++;
+    }
+}
+
+void CrabsOff(bool quiet = false) {
+    int r = RunLua(std::string(FeatureLuaPrelude()) + "stop(\"spCrabs\")\n", "Crabs off", "spCrabs");
+    if (!quiet && r == 0) Log("Crabs removed (they burrow away)");
+    T.crabOn = false;
+}
+
 }  // namespace
 
 void SpawnTick() {
@@ -413,8 +548,8 @@ void SpawnTick() {
     std::string lvl = CurrentLevelId();
     if (!lvl.empty() && lvl != T.level) {
         T.level = lvl;
-        T.shardOn = T.rainOn = false;
-        T.starsThisLevel = T.shardsThisLevel = 0;
+        T.shardOn = T.rainOn = T.nadoOn = T.crabOn = false;
+        T.starsThisLevel = T.shardsThisLevel = T.nadosThisLevel = T.crabsThisLevel = 0;
     }
 }
 
@@ -427,6 +562,8 @@ void SpawnTab() {
         Queue("Remove all", 2);
         ShardFallOff(true);
         RainOff(true);
+        ShardnadoOff(true);
+        CrabsOff(true);
         Log("Spawn: removing everything that can be removed (star showers end by themselves)");
     }
     if (ImGui::BeginChild("##spawn", ImVec2(0, 0), ImGuiChildFlags_None)) {
@@ -523,26 +660,83 @@ void SpawnTab() {
         Dim("DarkstoneRainRegion with its region marker on you. Drops that would leave pickups are off "
             "(dropCollectibles false); light drain is off unless ticked (the game's 0.05).");
 
+        // ---- tornado and crabs (events with a settings object, made with the game's own constructor)
+        Section("TORNADO AND CRABS",
+                "Events whose start reads a settings object: the tab makes it with the game's own Lua constructor "
+                "(ShardnadoParams.new(), CrabParams.new()) and only starts the event once it has taken it. Turn on "
+                "Invincibility (Features > Energy) first: what they do to you up close isn't verified.");
+        ImGui::Checkbox("Switch Invincibility on before spawning these##inv", &T.invincibleFirst);
+        ImGui::Indent(ImGui::GetFrameHeight() + 8);
+        Dim("Before a shard tornado or dark crabs (Invincibility is %s now).", InvincibilityOn() ? "on" : "off");
+        ImGui::Unindent(ImGui::GetFrameHeight() + 8);
+
+        ImGui::Spacing();
+        if (!GameIcon("UiMenuStageFallingRain", sz)) ImGui::Dummy(ImVec2(sz, sz));
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Shard tornado (experimental)");
+        ImGui::TextUnformatted("Shards");
+        IntSlider("##ndn", &T.nadoShards, 4, 32, "%d");
+        ImGui::TextUnformatted("Orbit radius");
+        FloatSlider("##ndr", &T.nadoRadius, 4.f, 20.f, "%.0f m");
+        ImGui::TextUnformatted("Shard size");
+        FloatSlider("##nds", &T.nadoScale, 0.5f, 2.f, "%.1f");
+        ImGui::TextUnformatted("Distance in front of you");
+        FloatSlider("##ndd", &T.nadoDist, 10.f, 60.f, "%.0f m");
+        if (ImGui::Button("Shard tornado##nd", ImVec2(ImGui::GetContentRegionAvail().x * 0.5f - 4, 0))) Shardnado();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!T.nadoOn);
+        if (ImGui::Button("Remove##nd", ImVec2(-1, 0))) ShardnadoOff();
+        ImGui::EndDisabled();
+        Dim("Shardnado: dark shards orbiting a point in front of you (orbit from half the radius to the radius, the "
+            "game's 0.3-0.6 orbit rates). It pushes and shocks your avatar when you're in it (0x1DF5CA8). One at a "
+            "time; Remove switches it off. At most %d per level (%d this level).",
+            kMaxNados, T.nadosThisLevel);
+
+        ImGui::Spacing();
+        if (!GameIcon("UiEmoteCallCrab", sz)) ImGui::Dummy(ImVec2(sz, sz));
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Crab burrow");
+        ImGui::TextUnformatted("Crabs");
+        IntSlider("##cbn", &T.crabCount, 1, 8, "%d");
+        ImGui::TextUnformatted("Size");
+        FloatSlider("##cbs", &T.crabSize, 0.25f, 1.f, "%.2f");
+        ImGui::TextUnformatted("Distance in front of you");
+        FloatSlider("##cbd", &T.crabDist, 2.f, 15.f, "%.0f m");
+        ImGui::Checkbox("Dark crabs##cb", &T.crabDark);
+        if (ImGui::Button("Crabs##cb", ImVec2(ImGui::GetContentRegionAvail().x * 0.5f - 4, 0))) Crabs();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!T.crabOn);
+        if (ImGui::Button("Remove##cb", ImVec2(-1, 0))) CrabsOff();
+        ImGui::EndDisabled();
+        Dim("SpawnCrabs: crabs dig up out of the ground in front of you (size: the game's 0.25; forced to the "
+            "ground). Dark crabs screech and knock you over. One burrow at a time; Remove switches it off and its "
+            "crabs burrow away. At most %d per level (%d this level).",
+            kMaxCrabSpawns, T.crabsThisLevel);
+
         // ---- not offered
-        Section("NOT OFFERED", "Kinds without a safe way to make them from the mod (what the game would do instead).");
-        NotOffered("UiMapStar", "Shard tornado (Shardnado)",
-                   "An event, but its start reads its ShardnadoParams object without checking it (0x1DF5C94: params "
-                   "+0x10). Those objects only come from level files; the mod can't make one, and nil would crash.");
+        Section("NOT OFFERED", "Kinds without a safe way to make them from the mod, and what TSM does instead.");
         NotOffered("UiHudStarSplit0", "ShardFall / MeteorFall on their own",
-                   "No settings: the shard count (+0x60) and meshes are filled by the eruption system (or by "
-                   "ManualShardFall, above). Made from Lua the count is 0 and they do nothing (0x19CEA94).");
-        NotOffered("UiEmoteCallCrab", "Crab burrow (SpawnCrabs)",
-                   "Its start reads its CrabParams object unchecked (0x1553CD8: params +0xE5); only level files make "
-                   "those. Crabs are offered above, through the test school.");
+                   "No settings: the shard count (+0x60) and meshes are filled by the eruption system or by "
+                   "ManualShardFall. Made from Lua the count is 0 and they do nothing (0x19CEA94). TSM's \"Spawn "
+                   "Shard\" is ManualShardFall with one marker, the same route as Shard fall above.");
         NotOffered("UiEmoteButterfly", "Light motes (SpawnMotes, SpawnLiftMotes)",
-                   "Each spawn passes its MoteParams object (+0x70) to the mote barn, which reads it unchecked "
-                   "(0x1A125A4). Butterflies are offered above.");
+                   "MoteParams.new() works, but both events stop themselves once their motes are made (0x1A233B4, "
+                   "0x1A18B04 -> 0x171F82C) and hand them to the mote barn; nothing takes them back, so they couldn't "
+                   "be removed until the level changes (and the constructor leaves railEndAction, +0x38, unset). TSM "
+                   "doesn't use them: its butterflies are MusicalMoteTarget, which calls motes the level already has "
+                   "(and lifts you). Butterflies are offered above.");
         NotOffered("UiMapSpirit", "NPCs / spirits (NpcDefs)",
                    "NpcBarn:CreateNpc exists, but an NPC is set up only by the barn's OnLevelLoadLate (0x1AA9C68 -> "
-                   "0x1AAC670) while the level loads; one made later isn't, and what its update then does isn't "
-                   "verified. Npc_SetDef/Npc_Teleport need an NPC the level already has.");
-        NotOffered("UiMenuBuffKrillCurse", "Krill / dark creatures, dark dragons (Lurker)",
-                   "They would hunt you: their attacks knock off winged light, which the server keeps.");
+                   "0x1AAC670) while the level loads; one made later isn't. TSM doesn't make NPCs either: its NPC rows "
+                   "show the level's own, and its \"Summon ... Whisperer\" buttons are the trust companion barn's "
+                   "developer tweaks (ChooseLighthorn..., 0x24B9BD8), a season companion with a server-kept daily limit.");
+        NotOffered("UiMenuBuffKrillCurse", "Krill / dark creatures, dark dragons",
+                   "Turn on Invincibility (Features > Energy) first: they can knock off your winged light. But they "
+                   "can't be made safely: DarkCreatureBarn:CreateDarkCreature only hands out one of 12 slots (0x15A0014; "
+                   "a 13th aborts the game) and a creature is set up only by the barn's OnLevelLoad (0x159B80C -> "
+                   "0x159B894: meshes, animations), which also needs its params' patrol and cooldown rails (from level "
+                   "files) and is networked by default. LurkerBarn:CreateLurker is the same with 3 slots (0x1938B4C). "
+                   "TSM doesn't spawn them: it only has Freeze Krill and Anti Krill (the game's tame switch).");
         NotOffered("UiEmoteCallFish", "Collectible fish (CollectibleFishClump)",
                    "Collectible fish are pickups; collecting them may change what your account holds.");
 
