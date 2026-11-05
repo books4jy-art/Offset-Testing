@@ -227,7 +227,9 @@ bool OneShot(const char* type) {
         "StarFallShower",
         // 0.16.0 (Reward animations): screen Fx that stop themselves when drawn (GetEmoteFx update 0x1F6CCA0 and
         // BreakEmoteFx 0x1F6367C end in 0x1720558; StarBlingFx 0x18FA6EC in 0x171F82C)
-        "GetEmoteFx", "BreakEmoteFx", "StarBlingFx"};
+        "GetEmoteFx", "BreakEmoteFx", "StarBlingFx",
+        // 0.16.2: the currency gain effect (experimental, amount 0); never kept, never switched off
+        "AccountAddCurrency"};
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
     return false;
@@ -1631,7 +1633,26 @@ void ItemsSection() {
                 Run(std::string(kCmd[i].label) + " animation", kCmd[i].lua, std::string("fx:") + kCmd[i].label);
         }
     }
-    Dim("Not found as a visual-only route: candle / seasonal candle / spell / gift reward animations.");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Currency gain effect (experimental)");
+    Dim("The game's AccountAddCurrency with the amount 0: it plays the gain animation for that currency. It's an "
+        "account event, so it likely sends an \"add 0\" request to the server you're connected to (nothing is "
+        "added). Needs the server switch (Transform > Winged light).");
+    {
+        static const char* kCur[] = {"kCurrencyType_Candle", "kCurrencyType_Heart", "kCurrencyType_SeasonCandle",
+                                     "kCurrencyType_SeasonHeart", "kCurrencyType_RainbowCandle",
+                                     "kCurrencyType_EventCandle", "kCurrencyType_SeasonWax", "kCurrencyType_StormKey",
+                                     "kCurrencyType_SeasonPassToken"};
+        static int cur = 0;
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+        ImGui::Combo("##cur", &cur, kCur, IM_ARRAYSIZE(kCur));
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!M.server);
+        if (ImGui::Button("Play##cur", ImVec2(-1, 0)))
+            StartEvent(std::string("Currency effect ") + (kCur[cur] + 14), "", "AccountAddCurrency",
+                       {{"value", "0", ""}, {"currencyType", Quote(kCur[cur]), ""}, {"name", "\"\"", ""}});
+        ImGui::EndDisabled();
+    }
 
     Section("PROPS", nullptr);
     NotPossible("Bucket brigade",
