@@ -651,6 +651,31 @@ void QuickSection() {
 
 }  // namespace
 
+bool LocalAvatarPos(float out[3], float* yaw) { return AvatarPos(out, yaw); }
+
+// Freeze in place: the same AvatarSetPos move as Teleport, to where you were, with momentum killed and hand-holds
+// kept; nothing logged (it repeats) and Back isn't touched.
+bool HoldAvatarAt(const float pos[3]) {
+    if (!Sane(pos[0]) || !Sane(pos[1]) || !Sane(pos[2]) || !IsGameEvent("AvatarSetPos")) return false;
+    char b[96];
+    snprintf(b, sizeof b, "{%.4f, %.4f, %.4f}", pos[0], pos[1], pos[2]);
+    std::string s = kPrelude;
+    s += "local e = game:eventBarn():AddEventByMetaName(\"AvatarSetPos\")\n"
+         "if not e then error(\"AvatarSetPos not found\") end\n"
+         "OffsetLab.frzM = OffsetLab.frzM or game:markerBarn():CreateMarker(0)\n"
+         "OffsetLab.frzM:pos(" + std::string(b) + ")\n"
+         "e:marker(OffsetLab.frzM)\n"
+         "pcall(function() e:relMarker(nil) end)\n"
+         "pcall(function() e:bstGuid(0) end)\n"
+         "pcall(function() e:onGround(false) end)\n"
+         "pcall(function() e:randomGroundInMarker(false) end)\n"
+         "pcall(function() e:setLevelStartPosition(false) end)\n"
+         "pcall(function() e:breakHandHold(false) end)\n"
+         "pcall(function() e:killMomentum(true) end)\n"
+         "e:Start()\n";
+    return RunLua(s, "Freeze in place", "freeze") == 0;
+}
+
 void TeleportSection() {
     std::string here = CurrentLevel();
     float pos[3];

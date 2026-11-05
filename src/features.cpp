@@ -219,7 +219,9 @@ bool OneShot(const char* type) {
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
         // 0.12.1: candle events, same (AvatarSetCandleState 0x11F5A60, SocialGift 0x1EB9EB4 end in 0x171F82C)
-        "AvatarSetCandleState", "SocialGift"};
+        "AvatarSetCandleState", "SocialGift",
+        // 0.14.0: stops itself when its fireOnce (+0x26) is set (update 0x124BE88); only ever started with it
+        "AvatarExitFlight"};
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
     return false;
@@ -714,6 +716,10 @@ void ProbeLua() {
 
 // ---------------------------------------------------------------- sub-tabs
 
+void PlayerMoreMovement();
+void PlayerPoseLook();
+void PlayerConvenience();
+
 void PlayerSection(bool inWorld) {
     Section("MOVEMENT", nullptr);
     ImGui::TextUnformatted("Player hover");
@@ -767,6 +773,7 @@ void PlayerSection(bool inWorld) {
     }
     if (Toggle("Kill avatar", &F.kill, "Your avatar dies (the game's own death), again every 3 s while on."))
         M.killNext = 0, Log("Kill avatar %s", F.kill ? "on" : "off");
+    PlayerMoreMovement();
 
     Section("ANIMATION", nullptr);
     if (Toggle("Stop all animations", &M.pause, "Freezes your avatar's animation (walking included) while on.")) {
@@ -806,6 +813,9 @@ void PlayerSection(bool inWorld) {
         if (M.neck) Neck();
         else NeckOff();
     }
+
+    PlayerPoseLook();
+    PlayerConvenience();
 
     Section("FOLLOW", nullptr);
     ImGui::TextColored(kAmber300, "Not available yet.");
@@ -1631,7 +1641,7 @@ constexpr uint32_t kTierOriginal[2] = {0xB4000040u /* cbz x0, #0x24a9394 */, 0xB
 constexpr uintptr_t kGameRelationship = 0x830;
 
 struct Social {
-    bool reveal = false, forceLight = false, unlight = false, tree = false;
+    bool reveal = false, forceLight = false, unlight = false, tree = false, strangers = false;
     bool lightReal = false;     // Force light: also the game's networked light, one player at a time
     double lightNext = 0;
     int lightSlot = 0;          // next avatar slot to look at
@@ -1743,13 +1753,19 @@ void SetUnlight(bool on) {
     else SO.unlight = !on;
 }
 
-// Offer emotes: the game's friendship abilities, with their icons (shown, not sent: see the reason below).
-struct Ability { const char* label; const char* icon; };
-const Ability kAbilities[] = {
-    {"Hold hands", "UiSocialHoldHands"}, {"High five", "UiSocialHighFive"}, {"Hug", "UiSocialHug"},
-    {"Carry", "UiSocialCarryA"},         {"Playfight", "UiSocialPlayfight"}, {"Fist bump", "UiSocialFistBump"},
-    {"Side hug", "UiSocialSideHugA"},    {"Bear hug", "UiEmoteSocialBearHug"}, {"Hair tousle", "UiSocialHairTousleA"},
-    {"Handshake", "UiSocialHandShakeA"}, {"Duet dance", "UiSocialDuetDanceA"}, {"Follow", "UiSocialFollow"},
+// Offer emotes to strangers. The player menu (RelationshipMenu) is filled with every ability of category "player"
+// whatever the friendship (0x1D8F934), but its builder (0x1D97C88) asks the game's "is this player my friend in this
+// session" (0x17A19E0: the uuid in Game +0x778's table; the same check the game's hand-hold lead uses, 0x11AF9D8)
+// at 0x1D97D6C. Not a friend: abilities of trust tier 0 and 1 are left out of the menu (0x1D98C64) and the rest
+// skip the friend-only checks. Patched: that call becomes mov w0, #1 (the call only reads; x0/x1 are loaded
+// again right after it), so the menu is built as for a friend. Second word: the menu's node builder (0x1D941C8)
+// checks that the base of an upgraded ability ("hug_2" needs "hug") was bought with that friend (0x1D767D0 ->
+// 0x11859BC, the friend record; strangers have none); its tbz at 0x1D94810 becomes a NOP so that row isn't locked.
+// The offer itself (the button's press, 0x1D78E14) needs no friend record: it calls the game's own offer
+// (0x118DE84: your avatar, the ability, the target's avatar id at button +0x2DC), which is what other players see.
+const CodePatch kStrangerPatches[2] = {
+    {"Offer emotes to strangers", 0x1D97D6C, 0x97E8271Du /* bl 0x17a19e0 */, 0x52800020u /* mov w0, #1 */},
+    {"Offer emotes to strangers", 0x1D94810, 0x360007E0u /* tbz w0, #0, #0x1d9490c */, kNop},
 };
 
 void SocialSection() {
@@ -1832,24 +1848,21 @@ void SocialSection() {
     }
 
     Section("OFFER EMOTES", nullptr);
-    ImGui::BeginDisabled();
-    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-    for (size_t i = 0; i < IM_ARRAYSIZE(kAbilities); i++) {
-        if (i % 2) ImGui::SameLine();
-        ImGui::PushID((int)i);
-        ImGui::BeginGroup();
-        float sz = ImGui::GetFrameHeight();
-        if (!DrawIcon(kAbilities[i].icon, sz)) ImGui::Dummy(ImVec2(sz, sz));
-        ImGui::SameLine();
-        ImGui::Button(kAbilities[i].label, ImVec2(bw - sz - ImGui::GetStyle().ItemSpacing.x, 0));
-        ImGui::EndGroup();
-        ImGui::PopID();
+    if (Toggle("Offer emotes to strangers", &SO.strangers,
+               "Tap a player you haven't befriended and the game's player menu shows the friendship abilities (hold "
+               "hands, high five, hug, carry...) as it does for a friend: the menu's \"is a friend\" check "
+               "(0x1D97D6C) and the \"bought the base ability with this friend\" check (0x1D94810) say yes. Use it "
+               "with Unlock friendship tree below, or the abilities stay locked at friendship level 0. Off: the "
+               "game's code put back (reopen the menu).")) {
+        if (!SetPatchPair(kStrangerPatches, SO.strangers)) SO.strangers = !SO.strangers;
+        else Log("Offer emotes to strangers %s", SO.strangers ? "on" : "off");
     }
-    ImGui::EndDisabled();
-    ImGui::TextColored(kAmber300, "Not possible from the mod yet.");
-    Dim("The game sends these offers only from its own player menu, for the player you tap (the menu's request "
-        "code, 0x1D7A838); the Social* events take no player from Lua. Use Unlock friendship tree below, then tap a "
-        "player and pick the ability there: that's the game's real request, which they can accept or decline.");
+    if (SO.strangers && !SO.tree) ImGui::TextColored(kAmber300, "Switch on Unlock friendship tree too.");
+    Dim("The offer is the game's own: picking an ability calls the game's offer for the player you tapped (0x118DE84, "
+        "your avatar + the ability + their avatar id), no friend record needed, nothing made up by the mod. Whether "
+        "they can accept is up to their game and the server: the other player's game may not show or accept an "
+        "offer from someone who isn't their friend (it refuses a hand-hold lead from a non-friend, 0x11AF9D8). The "
+        "player must be lit (the menu only opens for players you've lit).");
 
     Section("FRIENDSHIP TREE", nullptr);
     if (Toggle("Unlock friendship tree (client side)", &SO.tree,
@@ -1914,6 +1927,300 @@ void SocialTick(double t) {
         } else if (n != SO.treeLevels && SetTree(n)) {
             SO.treeLevels = n;
         }
+    }
+}
+
+// ---------------------------------------------------------------- 0.14.0: more Player rows
+//
+// Events checked in the 0.35.2 code (update = slot 0x140 of the type's vtable):
+// - AvatarExitFlight (update 0x124BE88): ends flight (game +0x300 -> +0xACA4 = 1, avatar state 2), then stops itself
+//   when its fireOnce (+0x26) is set: started with fireOnce, never kept.
+// - SetAvatarVelocity (0x123B4E4): X -> avatar +0x130, Y -> +0x134 and Z -> +0x134 as well (the game's Z writes the
+//   Y slot), then stops itself when fireOnce (+0x37). So only X and Y pushes work: Dash is along the world X axis.
+// - SetFlightParams (0x22BECC4), SetAvatarWindParams (0x22BA734), DisableJump (0x22BBC1C), DisableCliffJump
+//   (0x22B972C), DisableWeakJumpDown (0x22C1FC0): set an "override this frame" flag + value for the player every
+//   frame while running; switched off with the event.
+// - DisableLocalPlayerBounce: no update of its own (the game checks whether one is running).
+// - AvatarPoseForceWalkCycle (0x123AA18): forceWeak (+0x26) / forceNervous (+0x27) set the walk cycle every frame.
+// - AvatarShrinkGrow (0x123AC90): every frame moves the current size/height (+0x34/+0x38) toward targetScale /
+//   targetHeight at `speed`, on the same -3..3 scale as the outfit size/height values (0x3139710 / 0x313970C); -3,
+//   the default, is the bottom of that range (smallest). Reset: grow back to your own values, then switch off.
+// - SetAvatarGhost (0x1B65664), SetAvatarCapeTattered (0x1B7D3A4), HideAvatarFlightTrail (0x124A1CC): applied every
+//   frame while running.
+// - AvatarSetStance, AvatarSetInnerGlow: one-shots (already in OneShot()).
+//
+// Code and data:
+// - Fast flap: the flap's busy time ([flap +0xD0], compared with the time since the flap at 0x22D4068 / 0x22D4B18:
+//   no new flap before it) is worked out at 0x22D49F0 as fmadd s0, s0, s1, s2 (1.5 or 2.0 s, less 0.5 s with
+//   speed). Patched: fmov s0, #0.5 (the shortest the game itself uses, 0x22D4988).
+// - Anti-AFK: the AfkBarn's "idle longer than the limit" check (0xF8F330, used for "Start afk" / "Start full afk"
+//   at 0x1182990 and by creatures) ends in cset w0, gt at 0xF8F374; patched: mov w0, wzr (never idle).
+// - Fast home: the home hold (0x1EBE1BC) waits until its timer (+0x2E8) reaches 5.25 s (b.lt at 0x1EBE348) after
+//   the first 0.25 s; patched: NOP, so it goes home after the first 0.25 s.
+// - Fade all avatars: byte 0x312F490 (read at 0x11A8E08): when set, every avatar's fade target is 0 (ethereal),
+//   on your screen.
+const CodePatch kFastFlapPatch = {"Fast flap", 0x22D49F0, 0x1F010800u /* fmadd s0, s0, s1, s2 */,
+                                  0x1E2C1000u /* fmov s0, #0.5 */};
+const CodePatch kAntiAfkPatch = {"Anti-AFK", 0xF8F374, 0x1A9FD7E0u /* cset w0, gt */, 0x2A1F03E0u /* mov w0, wzr */};
+const CodePatch kFastHomePatch = {"Fast home", 0x1EBE348, 0x54000CCBu /* b.lt #0x1ebe4e0 */, kNop};
+constexpr uint32_t kFadeAllSwitch = 0x312F490;
+
+struct PlayerMore {
+    float dash = 15.f;
+    float cruise = 2.f, lift = 1.f;
+    bool cruiseOn = false, liftOn = false;
+    bool noWind = false, noJump = false, noCliff = false, noBounce = false, noWeakDown = false;
+    bool fastFlap = false;
+    bool freeze = false;
+    float freezeAt[3] = {0, 0, 0};
+    double freezeNext = 0;
+    bool weak = false, nervous = false;
+    float size = 0.f, height = 0.f, growSpeed = 1.f;
+    double growStopAt = 0;
+    bool ghost = false, ghostNoLight = false, fadeAll = false;
+    bool tattered = false;
+    double tatteredStopAt = 0;
+    float glow = 1.f;
+    bool noTrail = false;
+    bool antiAfk = false, fastHome = false;
+} PM;
+
+void FlightParams() {
+    if (!PM.cruiseOn && !PM.liftOn) {
+        StopEvent("Glide & lift back to normal", "flightparams");
+        return;
+    }
+    StartEvent("Glide " + (PM.cruiseOn ? Num(PM.cruise) : std::string("normal")) + ", lift " +
+                   (PM.liftOn ? Num(PM.lift) : std::string("normal")),
+               "flightparams", "SetFlightParams",
+               {{"cruiseAngleDegreesEnabled", PM.cruiseOn ? "true" : "false", ""},
+                {"cruiseAngleDegrees", Num(PM.cruise), ""},
+                {"liftMultEnabled", PM.liftOn ? "true" : "false", ""},
+                {"liftMult", Num(PM.lift), ""}});
+}
+
+// A toggle that keeps one of the game's events running while on (no settings).
+void EventToggle(const char* label, bool* on, const char* key, const char* type, const char* help) {
+    if (Toggle(label, on, help)) {
+        if (*on) StartEvent(std::string(label) + " on", key, type, {});
+        else StopEvent(std::string(label) + " off", key);
+    }
+}
+
+void WalkCycle() {
+    if (!PM.weak && !PM.nervous) {
+        StopEvent("Walk back to normal", "walkcycle");
+        return;
+    }
+    StartEvent(PM.weak && PM.nervous ? "Weak + nervous walk" : PM.weak ? "Weak walk" : "Nervous walk", "walkcycle",
+               "AvatarPoseForceWalkCycle",
+               {{"forceWeak", PM.weak ? "true" : "false", ""}, {"forceNervous", PM.nervous ? "true" : "false", ""}});
+}
+
+void ShrinkGrow(float size, float height, const std::string& what) {
+    PM.growStopAt = 0;
+    StartEvent(what, "shrinkgrow", "AvatarShrinkGrow",
+               {{"targetScale", Num(size), ""}, {"targetHeight", Num(height), ""}, {"speed", Num(PM.growSpeed), ""}});
+}
+
+void Ghost() {
+    if (!PM.ghost) {
+        StopEvent("Ghost look off", "ghost");
+        return;
+    }
+    StartEvent("Ghost look on", "ghost", "SetAvatarGhost", {{"disableOmniLight", PM.ghostNoLight ? "true" : "false", ""}});
+}
+
+void Stance(const char* label, const char* state, int index, bool sit, bool sleep, bool stand) {
+    StartEvent(std::string("Stance: ") + label, "", "AvatarSetStance",
+               {{"avatarState", Quote(state), std::to_string(index)}, {"overwriteState", "true", ""},
+                {"sit", sit ? "true" : "false", ""}, {"sleep", sleep ? "true" : "false", ""},
+                {"stand", stand ? "true" : "false", ""}, {"instant", "true", ""}, {"fireOnce", "true", ""}});
+}
+
+void PatchToggle(const char* label, bool* on, const CodePatch& p, const char* help) {
+    if (Toggle(label, on, help)) {
+        if (!SetCodePatch(p, *on)) *on = !*on;
+        else Log("%s %s", label, *on ? "on" : "off");
+    }
+}
+
+void PlayerMoreMovement() {
+    if (ImGui::Button("Land now", ImVec2(Px(260), 0)))
+        StartEvent("Land now", "", "AvatarExitFlight", {{"fireOnce", "true", ""}});
+    Dim("Ends flight where you are (AvatarExitFlight, once).");
+
+    ImGui::TextUnformatted("Dash / launch");
+    Slider("dash", &PM.dash, 1.f, 80.f, 15.f, "speed %.0f");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    struct D { const char* label; float x, y; };
+    const D dash[3] = {{"Launch up", 0, 1}, {"Dash +X", 1, 0}, {"Dash -X", -1, 0}};
+    for (int i = 0; i < 3; i++) {
+        if (i) ImGui::SameLine();
+        if (ImGui::Button(dash[i].label, ImVec2(bw, 0)))
+            StartEvent(std::string(dash[i].label) + " " + Num(PM.dash), "", "SetAvatarVelocity",
+                       {{"velocityX", Num(dash[i].x * PM.dash), ""}, {"velocityY", Num(dash[i].y * PM.dash), ""},
+                        {"setVelocityX", dash[i].x != 0 ? "true" : "false", ""},
+                        {"setVelocityY", dash[i].y != 0 ? "true" : "false", ""}, {"fireOnce", "true", ""}});
+    }
+    Dim("One push (SetAvatarVelocity, fireOnce). World axes, not your facing: the game's event writes its Z value "
+        "into the up slot (0x123B538), so a push along Z or \"forward\" can't be made; X is east/west of the level.");
+
+    ImGui::TextUnformatted("Glide & lift");
+    Dim("SetFlightParams while on: glide angle in degrees (the game's cruise pitch; SetCruisePitch's default is 2) and "
+        "lift multiplier (1 = normal). Reset: the game's own value.");
+    if (ImGui::Checkbox("Glide angle", &PM.cruiseOn)) FlightParams();
+    int r = Slider("cruise", &PM.cruise, -45.f, 45.f, 2.f, "%.0f deg");
+    if (r == 2) PM.cruiseOn = false;
+    if (r) FlightParams();
+    if (ImGui::Checkbox("Lift", &PM.liftOn)) FlightParams();
+    r = Slider("lift", &PM.lift, 0.f, 5.f, 1.f, "%.2fx");
+    if (r == 2) PM.liftOn = false;
+    if (r) FlightParams();
+
+    if (Toggle("Ignore wind", &PM.noWind,
+               "No wind pushing you while standing, no wind \"boom\" knock-back, no wind while recovering from a hit "
+               "(SetAvatarWindParams while on). Off: normal wind.")) {
+        if (PM.noWind)
+            StartEvent("Ignore wind on", "wind", "SetAvatarWindParams",
+                       {{"noStandingWind", "true", ""}, {"noStandingBoom", "true", ""}, {"noWindInHitRecover", "true", ""},
+                        {"boomThreshEnabled", "true", ""}, {"boomThresh", "100000", ""}});
+        else StopEvent("Ignore wind off", "wind");
+    }
+    EventToggle("No jump", &PM.noJump, "nojump", "DisableJump", "The jump button does nothing (DisableJump while on).");
+    EventToggle("No cliff jump", &PM.noCliff, "nocliff", "DisableCliffJump",
+                "No automatic jump off ledges (DisableCliffJump while on).");
+    EventToggle("No weak jump down", &PM.noWeakDown, "noweakdown", "DisableWeakJumpDown",
+                "No small hop down from low ledges (DisableWeakJumpDown while on).");
+    EventToggle("No bounce", &PM.noBounce, "nobounce", "DisableLocalPlayerBounce",
+                "No bouncing off bounce pads and springy things (DisableLocalPlayerBounce while on).");
+    PatchToggle("Fast flap", &PM.fastFlap, kFastFlapPatch,
+                "Flap again sooner: the time a flap keeps you busy (normally 1-2 s, 0x22D49F0) is 0.5 s, the "
+                "game's own shortest. Each flap still costs energy. Off: the game's code put back.");
+    ImGui::BeginDisabled();
+    bool no = false;
+    ImGui::Checkbox("Scooter mode", &no);
+    ImGui::EndDisabled();
+    Dim("Not added: the code TSM labels scooter mode (0x12343FC) reads a byte (+0x3810 of the object from 0x15E45D8) "
+        "that, on the ground, zeroes your velocity just before the position update (0x123440C). That stops you; it "
+        "isn't a scooter, and what sets that byte isn't known.");
+    if (Toggle("Freeze in place", &PM.freeze,
+               "Holds you where you are now: the game's AvatarSetPos moves you back to that spot (momentum killed) "
+               "5 times a second, the same move Teleport uses. It lets go by itself on a level change or teleport. Off: "
+               "you're free again.")) {
+        if (PM.freeze && !LocalAvatarPos(PM.freezeAt)) {
+            Log("Freeze in place: your position can't be read right now (enter a level)");
+            PM.freeze = false;
+        } else {
+            PM.freezeNext = 0;
+            Log("Freeze in place %s", PM.freeze ? "on" : "off");
+        }
+    }
+}
+
+void PlayerPoseLook() {
+    Section("POSE & LOOK", nullptr);
+    ImGui::TextUnformatted("Stance");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    struct St { const char* label; const char* state; int index; bool sit, sleep, stand; };
+    const St st[6] = {{"Sit", "AvatarState_Sit", 2, true, false, false},
+                      {"Squat", "AvatarState_Squat", 1, false, false, false},
+                      {"Sleep", "AvatarState_Sleep", 3, false, true, false},
+                      {"Idle sit", "AvatarState_IdleSit", 4, true, false, false},
+                      {"Frozen", "AvatarState_Immobile", 5, false, false, false},
+                      {"Default", "AvatarState_Default", 0, false, false, true}};
+    for (int i = 0; i < 6; i++) {
+        if (i % 3) ImGui::SameLine();
+        if (ImGui::Button(st[i].label, ImVec2(bw, 0)))
+            Stance(st[i].label, st[i].state, st[i].index, st[i].sit, st[i].sleep, st[i].stand);
+    }
+    Dim("AvatarSetStance, once (instant, overwriting the state). Default stands you up again; moving also ends most "
+        "stances. Frozen is the game's immobile state: press Default to move again.");
+
+    if (Toggle("Weak walk", &PM.weak, "The tired, weak walk (AvatarPoseForceWalkCycle forceWeak while on).")) WalkCycle();
+    if (Toggle("Nervous walk", &PM.nervous, "The nervous walk (forceNervous while on).")) WalkCycle();
+
+    ImGui::TextUnformatted("Smooth shrink / grow");
+    Dim("Grows or shrinks you smoothly to this size and height (AvatarShrinkGrow, kept on). -3..3 is the game's own "
+        "scale (the outfit size/height values; -3, the event's default, is the smallest). Reset: back to your own "
+        "size and height, then switched off.");
+    Slider("growspeed", &PM.growSpeed, 0.05f, 5.f, 1.f, "speed %.2f");
+    int a = Slider("growsize", &PM.size, -3.f, 3.f, 0.f, "size %.2f");
+    int b = Slider("growheight", &PM.height, -3.f, 3.f, 0.f, "height %.2f");
+    if (a == 2 || b == 2) {
+        float s = 0, h = 0;
+        bool ok = GameBase() && ReadMemory(GameBase() + kAvatarScale, &s, 4) &&
+                  ReadMemory(GameBase() + kAvatarHeight, &h, 4) && s >= -3.f && s <= 3.f && h >= -3.f && h <= 3.f;
+        PM.size = ok ? s : 0.f, PM.height = ok ? h : 0.f;
+        ShrinkGrow(PM.size, PM.height, "Shrink/grow: back to your size");
+        PM.growStopAt = ImGui::GetTime() + 2.0 + 6.0 / std::max(0.05f, PM.growSpeed);
+    } else if (a || b) {
+        ShrinkGrow(PM.size, PM.height, "Shrink/grow: size " + Num(PM.size) + ", height " + Num(PM.height));
+    }
+
+    if (Toggle("Ghost look", &PM.ghost, "Your avatar drawn as a ghost (SetAvatarGhost while on).")) Ghost();
+    ImGui::Indent(ImGui::GetFrameHeight() + 8);
+    if (ImGui::Checkbox("Without its light", &PM.ghostNoLight) && PM.ghost) Ghost();
+    ImGui::Unindent(ImGui::GetFrameHeight() + 8);
+    if (Toggle("Fade all avatars", &PM.fadeAll,
+               "Every avatar fades out to the ethereal look, on your screen: the game's switch at 0x312F490 (read at "
+               "0x11A8E08). Off: the switch back to 0. (TSM's \"force ethereal\", 0x312F4A0, is the avatar drawing "
+               "budget instead, 0x11A2C50: not used.)")) {
+        if (!SetSwitch("Fade all avatars", kFadeAllSwitch, PM.fadeAll)) PM.fadeAll = !PM.fadeAll;
+    }
+    ImGui::BeginDisabled();
+    bool no = false;
+    ImGui::Checkbox("Charcoal look", &no);
+    ImGui::EndDisabled();
+    Dim("Not added: 0x312F4B4 (TSM's \"avatar charcoaling\") is the game's \"players can be unlit\" switch (read at "
+        "0x11A048C, normally 1); it doesn't make you look charcoal. Force light / Unlight all (Social) use that code.");
+    if (Toggle("Tattered cape", &PM.tattered, "Your cape looks torn (SetAvatarCapeTattered, amount 1, while on). Off: "
+               "amount 0 for a moment, then switched off.")) {
+        PM.tatteredStopAt = 0;
+        StartEvent(PM.tattered ? "Tattered cape on" : "Tattered cape off", "tattered", "SetAvatarCapeTattered",
+                   {{"amount", PM.tattered ? "1.0" : "0.0", ""}});
+        if (!PM.tattered) PM.tatteredStopAt = ImGui::GetTime() + 1.0;
+    }
+    ImGui::TextUnformatted("Inner glow");
+    Dim("Your avatar's inner glow (AvatarSetInnerGlow, once; it stays). Reset: glow 0.");
+    if (int g = Slider("innerglow", &PM.glow, 0.f, 5.f, 0.f, "%.2f"))
+        StartEvent(g == 2 ? "Inner glow off" : "Inner glow " + Num(PM.glow), "", "AvatarSetInnerGlow",
+                   {{"amount", Num(PM.glow), ""}, {"stayActive", "true", ""}, {"fadeInDuration", "0.5", ""}});
+    EventToggle("Hide flight trail", &PM.noTrail, "notrail", "HideAvatarFlightTrail",
+                "No trail behind you when flying (HideAvatarFlightTrail while on).");
+}
+
+void PlayerConvenience() {
+    Section("CONVENIENCE", nullptr);
+    PatchToggle("Anti-AFK", &PM.antiAfk, kAntiAfkPatch,
+                "Your game never decides you're idle: the AFK check (0xF8F330) always says no, so no AFK pose, no "
+                "\"full AFK\". Your device only: the server may still drop an idle connection. Off: the game's code "
+                "put back. (TheVoid's no_afk byte, 0x2DFECA0, isn't read by any code in 0.35.2: not used.)");
+    PatchToggle("Fast home", &PM.fastHome, kFastHomePatch,
+                "Holding the home button sends you home after 0.25 s instead of 5.25 s (0x1EBE348). Off: the game's "
+                "code put back.");
+}
+
+void PlayerTick(double t) {
+    if (PM.freeze && t >= PM.freezeNext) {
+        PM.freezeNext = t + 0.2;
+        float p[3];
+        bool have = LocalAvatarPos(p);
+        float dx = p[0] - PM.freezeAt[0], dy = p[1] - PM.freezeAt[1], dz = p[2] - PM.freezeAt[2];
+        if (!have || dx * dx + dy * dy + dz * dz > 40.f * 40.f) {  // new level, teleport or no avatar: let go
+            PM.freeze = false;
+            Log("Freeze in place off (you moved to another place)");
+        } else {
+            HoldAvatarAt(PM.freezeAt);
+        }
+    }
+    if (PM.growStopAt > 0 && t >= PM.growStopAt) {
+        PM.growStopAt = 0;
+        StopEvent("", "shrinkgrow");
+    }
+    if (PM.tatteredStopAt > 0 && t >= PM.tatteredStopAt) {
+        PM.tatteredStopAt = 0;
+        if (!PM.tattered) StopEvent("", "tattered");
     }
 }
 
@@ -1983,6 +2290,7 @@ void FeaturesTick() {
         if (!X.audience && !X.broom) StopEvent("", "audience");
     }
     SocialTick(t);
+    PlayerTick(t);
     if (X.candleRedAt > 0 && t >= X.candleRedAt) {
         X.candleRedAt = 0;
         CandleState("Red candle out", "kAvatarCandleFlameState_On", "1");

@@ -123,6 +123,8 @@ void Draw(bool* open);
 void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders, buttons)
 void FeaturesTick();     // features.cpp: repeating actions, every frame
 void TeleportSection();  // teleport.cpp: the Features tab's Teleport sub-tab
+bool LocalAvatarPos(float out[3], float* yaw = nullptr);  // teleport.cpp: your avatar's position (read natively)
+bool HoldAvatarAt(const float pos[3]);  // teleport.cpp: AvatarSetPos to pos, quietly (queue key "freeze")
 void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
 void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
 float Px(float v);

@@ -74,6 +74,24 @@ The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera,
 | Stop all animations | toggle | `AvatarPauseAnim` for 1 s, renewed every 0.5 s while on |
 | T-pose | toggle; any animation name with Play / Stop | `PlayAvatarAnimSeq` (`AirplaneArmsEmote_1`), then `AvatarPauseAnim`; `StopAvatarAnimSeq` |
 | Neck turn (experimental) | toggle (the head follows the camera) | `AvatarLookAt` at a marker kept at the camera by `GetCameraTransform`. No sliders: reading a marker's position from Lua (`marker:pos()`) crashes the game |
+| Land now | button | `AvatarExitFlight` with `fireOnce` (update `0x124BE88` stops itself) |
+| Dash / launch | speed slider; Launch up, Dash +X, Dash −X | `SetAvatarVelocity`, one push (`fireOnce`). World axes: the event writes its Z value into the up slot (`0x123B538`), so no forward/Z push |
+| Glide & lift | glide angle and lift toggles + sliders, Reset | `SetFlightParams` (`cruiseAngleDegrees`, `liftMult`) held while on |
+| Ignore wind | toggle | `SetAvatarWindParams` (`noStandingWind`, `noStandingBoom`, `noWindInHitRecover`, boom threshold 100000) held while on |
+| No jump, No cliff jump, No weak jump down, No bounce | toggles | `DisableJump`, `DisableCliffJump`, `DisableWeakJumpDown`, `DisableLocalPlayerBounce` while on |
+| Fast flap | toggle | the flap's busy time (`fmadd` at `0x22D49F0`, 1–2 s) becomes `fmov s0, #0.5`; off puts the word back |
+| Scooter mode | disabled | `0x12343FC` (TSM's label) zeroes your velocity on the ground when a byte is set: not a scooter |
+| Freeze in place | toggle | `AvatarSetPos` back to the spot you were at (read natively), every 0.2 s; lets go on a level change |
+| Stances | Sit, Squat, Sleep, Idle sit, Frozen, Default | `AvatarSetStance` (`avatarState`, `overwriteState`, `instant`, once) |
+| Weak walk, Nervous walk | toggles | `AvatarPoseForceWalkCycle` `forceWeak` / `forceNervous` while on |
+| Smooth shrink / grow | speed, size and height sliders (−3..3), Reset | `AvatarShrinkGrow` (−3, its default, is the smallest); Reset grows back to your own values (`0x3139710`/`0x313970C`), then stops |
+| Ghost look, Fade all avatars | toggles | `SetAvatarGhost` (+ `disableOmniLight`); the fade switch byte `0x312F490` (read at `0x11A8E08`) |
+| Charcoal look | disabled | `0x312F4B4` is the "players can be unlit" switch, not a look |
+| Tattered cape | toggle | `SetAvatarCapeTattered` amount 1; off: amount 0, then stopped |
+| Inner glow | slider, Reset (0) | `AvatarSetInnerGlow` (once, stays) |
+| Hide flight trail | toggle | `HideAvatarFlightTrail` while on |
+| Anti-AFK | toggle | the AFK check (`0xF8F330`) ends in `cset w0, gt` at `0xF8F374`, patched to `mov w0, wzr`; your device only |
+| Fast home | toggle | the home hold's 5.25 s wait (`b.lt` at `0x1EBE348`) a NOP: home after 0.25 s |
 | Follow | *Look for access* (writes the game's Lua API to `offsetlab_lua_api.txt`) | not available yet: no event follows another player, and their positions aren't read yet |
 | Transform avatar | scrolling buttons (forms; *Other spells too*), duration slider, any spell id, *Back to normal* | `GrantSpell` (not networked), `RemoveSpell` |
 | Winged light, temporary | toggle + slider + typing | `AvatarOverrideCapeLevel` (reverts when stopped) |
@@ -110,7 +128,7 @@ The tab has sub-tabs: Player, Energy, Transform, Outfits, Items, Emotes, Camera,
 | Force light all (Social) | toggle | your screen: the unlit check reads the game's unlit-players switch (`ldrb w12` at `0x11A048C`, switch byte `0x312F4B4`); it becomes `mov w12, wzr`, so nobody is marked unlit (avatar state bit 0, halfword at avatar `+0x10A0C`). Off: the word put back |
 | … also light them for real (Social, server switch) | checkbox under Force light all | others see it: the game's own light-a-player function (`0x11A84D4`: avatar, Game `+0x6B0`), the one the candle calls when two flames touch (`0x18703BC`) and `OrbitHandholdingScene` calls for every unlit avatar (`0x11FC460`). Called on the game's main thread (frame hook) for one player every 0.5 s: other players in the level that aren't your own avatar, are in the level (bit 3), weren't lit before (bit 2, bit 14) and haven't been sent a light (`+0x10A78`; the game sends each light once). Off: stops; lights already given stay, as in the game |
 | Unlight all (Social) | toggle | your screen only (the game has no way to take light away for others): `cbz w12` at `0x11A0498` becomes a NOP and `eor w8, w10, #1` at `0x11A04AC` becomes `mov w8, #1`, so every other player in the level is marked unlit; your own avatar stays out (the `csel` at `0x11A04B4`). Switches Show others and Force light off. Off: both words put back |
-| Offer emotes (Social) | disabled buttons with the game's icons | not possible from the mod yet: offers are sent only by the game's player menu for the player you tap (`0x1D7A838`), and the `Social…` events take no player from Lua. With Unlock friendship tree on, use the game's menu |
+| Offer emotes to strangers (Social) | toggle | the player menu's builder (`0x1D97C88`) asks "is this player my friend in this session" (`bl 0x17A19E0` at `0x1D97D6C`; not a friend: trust tier 0/1 abilities are left out, `0x1D98C64`), patched to `mov w0, #1`; and the node builder's "base ability bought with this friend" check (`tbz` at `0x1D94810`, strangers have no friend record) a NOP. Use with Unlock friendship tree. The offer is the game's own (`0x118DE84`: your avatar, the ability, the target's avatar id; no friend record needed); the other player's game and the server decide whether it can be accepted. Off: both words put back |
 | Unlock friendship tree (Social, client side) | toggle | the friendship level (`0x24A92F8`, Game `+0x830` → `+0x10`): `ldr w0, [x0, #4]` at `0x24A9390` becomes `mov w0, #levels` and `cbz x0` at `0x24A938C` a NOP, `levels` being the size of the game's own tier list (read each 2 s; more aborts the game at `0x24AF7FC`). The menu then shows every ability unlocked (`trust_error_tier_locked` check, `0x1D775A0`). The server and the other player still decide. Off: both words put back |
 | Audience mode (Social, experimental) | toggle | `AudienceSettings` (reaction menu, no reservation); off: the neutral settings for a moment, then switched off |
 | Unlock all (Social, local only) | toggle | the game's "has unlock" check (`0xDFC144`): its branch to the second lookup (`cbz x0` at `0xDFC174`) becomes a NOP so it always returns yes. The server still decides anything it checks. Off: the instruction put back |
