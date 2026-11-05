@@ -1650,7 +1650,8 @@ void ItemsSection() {
         ImGui::BeginDisabled(!M.currencyServer);
         if (ImGui::Button("Play##cur", ImVec2(-1, 0)))
             StartEvent(std::string("Currency effect ") + (kCur[cur] + 14), "currency", "AccountAddCurrency",
-                       {{"value", "10", ""}, {"currencyType", Quote(kCur[cur]), ""}, {"name", "\"\"", ""}});
+                       {{"value", "10", ""}, {"currencyType", Quote(kCur[cur]), std::to_string(cur), true},
+                        {"name", "\"\"", ""}});
         ImGui::EndDisabled();
     }
 
