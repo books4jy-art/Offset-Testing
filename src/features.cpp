@@ -9,6 +9,7 @@
 #include "dobby.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cinttypes>
 #include <cstdarg>
 #include <cmath>
@@ -31,16 +32,14 @@ const ImVec4 kRed300(0.988f, 0.647f, 0.647f, 1.f);
 const ImVec4 kAmber300(0.988f, 0.827f, 0.302f, 1.f);
 
 // ---------------------------------------------------------------- AccountAddCurrency native hook
-// currencyType is kUnknown in the type table: the game has no Lua setter for it, so we can't set it from Lua. Instead we
-// carry the type per event through the one int field Lua can set (value, at event+0x48), tagged so it can't be mistaken
-// for a real amount, and the hook splits it back into the amount (+0x48) and the currencyType byte (+0x4C) before the
-// handler reads them. Per event, so there's no shared state to race when several adds overlap (the handler runs on a
-// ~6 s timer, and an earlier design with one global pending type left later events reading uninitialised memory).
-// The handler at 0xf6c620 reads value (int32, +0x48) and currencyType (uint8, +0x4C).
+// currencyType is kUnknown in the type table: the game has no Lua setter for it, so an event made from Lua starts with
+// an uninitialised currencyType byte (+0x4C). We fill it in from the hook: the handler at 0xf6c620 runs every frame
+// until its timer (+0x58) passes 6 s, then reads the amount (int32, +0x48) and currencyType (uint8, +0x4C) and sends
+// the add. On the first frame the byte is garbage (an earlier design aborted with "Invalid currency type: 205"); when
+// it's out of range we set it to the type the user last picked. The game's own currency events already hold a valid
+// byte, so they're left alone.
 constexpr uintptr_t kAddCurrencyHandler = 0xF6C620;
 constexpr uint32_t kAddCurrencyFirstInstr = 0xA9BD7BFD;  // stp x29, x30, [sp, #-0x30]!
-constexpr int32_t kCurrencyScale = 1000000;              // value = currencyType * kCurrencyScale + amount
-int32_t EncodeCurrencyValue(uint8_t type, int32_t amount) { return (int32_t)type * kCurrencyScale + amount; }
 
 struct CurrencyEntry { const char* name; uint8_t value; };
 static const CurrencyEntry kCurrencyMap[] = {
@@ -70,17 +69,14 @@ static const CurrencyEntry kCurrencyMap[] = {
 };
 
 static int gCurrencyHookState = 0;
+static std::atomic<uint8_t> gCurrencyType{3};  // the type the user last picked (3 = Heart), never consumed
 
 void OnAddCurrencyHandler(void*, DobbyRegisterContext* ctx) {
     auto* event = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(ctx->general.regs.x0));
-    int32_t value = 0;
-    memcpy(&value, event + 0x48, 4);
-    if (value < kCurrencyScale) return;  // not one of ours (or already split on an earlier call)
-    uint8_t type = (uint8_t)(value / kCurrencyScale);
-    int32_t amount = value % kCurrencyScale;
-    if (type < 1 || type > 75) return;
-    event[0x4C] = type;
-    memcpy(event + 0x48, &amount, 4);
+    uint8_t cur = event[0x4C];
+    if (cur >= 1 && cur <= 75) return;  // already a valid type (ours, set earlier, or the game's own event)
+    uint8_t want = gCurrencyType.load(std::memory_order_acquire);
+    event[0x4C] = (want >= 1 && want <= 75) ? want : 3;  // never leave it invalid: the game aborts on a bad type
 }
 
 bool InstallCurrencyHook() {
@@ -1744,9 +1740,9 @@ void ItemsSection() {
         if (ImGui::Button("Play##cur", ImVec2(-1, 0))) {
             uint8_t cv = CurrencyValue(M.currencies[M.curType]);
             if (cv && InstallCurrencyHook()) {
-                std::string encoded = std::to_string(EncodeCurrencyValue(cv, 10));
+                gCurrencyType.store(cv, std::memory_order_release);
                 StartEvent(std::string("Currency +10 ") + M.currencies[M.curType], "", "AccountAddCurrency",
-                           {{"value", encoded, ""}, {"name", "\"\"", ""}});
+                           {{"value", "10", ""}, {"name", "\"\"", ""}});
             } else if (!cv) {
                 Log("Currency: unknown type %s", M.currencies[M.curType].c_str());
             }
