@@ -595,6 +595,7 @@ std::string Lower(std::string s) {
 struct More {
     // server (off at every start)
     bool server = false;
+    bool currencyServer = false;
     // animation
     bool pause = false;
     bool tpose = false;
@@ -1635,8 +1636,8 @@ void ItemsSection() {
     ImGui::Spacing();
     ImGui::TextUnformatted("Currency gain effect (experimental)");
     Dim("The game's AccountAddCurrency with the amount 10: it plays the gain animation for that currency. It's an "
-        "account event, so it sends an \"add 10\" request to the server you're connected to. "
-        "Needs the server switch (Transform > Winged light).");
+        "account event, so it sends an \"add 10\" request to the server you're connected to.");
+    ImGui::Checkbox("Server requests on (off at every start)##cur", &M.currencyServer);
     {
         static const char* kCur[] = {"kCurrencyType_Candle", "kCurrencyType_Heart", "kCurrencyType_SeasonCandle",
                                      "kCurrencyType_SeasonHeart", "kCurrencyType_RainbowCandle",
@@ -1646,7 +1647,7 @@ void ItemsSection() {
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
         ImGui::Combo("##cur", &cur, kCur, IM_ARRAYSIZE(kCur));
         ImGui::SameLine();
-        ImGui::BeginDisabled(!M.server);
+        ImGui::BeginDisabled(!M.currencyServer);
         if (ImGui::Button("Play##cur", ImVec2(-1, 0)))
             StartEvent(std::string("Currency effect ") + (kCur[cur] + 14), "currency", "AccountAddCurrency",
                        {{"value", "10", ""}, {"currencyType", Quote(kCur[cur]), ""}, {"name", "\"\"", ""}});
