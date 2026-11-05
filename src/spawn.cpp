@@ -231,6 +231,8 @@ struct State {
     float crabSize = 0.25f;  // CrabParams radius (the constructor's 0.25)
     float crabDist = 4;      // metres in front of you
     bool crabDark = false;   // darkCrab: they screech at you and knock you over
+    int crabType = 0;        // CrabParams crabType: kCrabType_Normal / _Hermit / _Zombie (the game's order)
+    int crabMood = 0;        // crab state: Neutral / Friendly / Dark / Corrupted (kCrabState_*)
     bool crabOn = false;
     int crabsThisLevel = 0;
     bool invincibleFirst = true;  // switch Invincibility on before a tornado or dark crabs
@@ -513,7 +515,18 @@ void Crabs() {
                                       {"time", "1.5"}, {"params", "OffsetLab[\"" + slot + "\"]"}},
                                      {"SetTransform", "params"});
     if (ev.empty()) return;
-    if (T.crabDark) MaybeInvincible("Dark crabs");
+    // type and mood: the game's own option names (crabType's options are in the game's setting table, in this order;
+    // the mood's place in CrabParams isn't in that table, so it's only sent by name and simply not applied if refused)
+    static const char* kTypes[] = {"kCrabType_Normal", "kCrabType_Hermit", "kCrabType_Zombie"};
+    static const char* kMoods[] = {"kCrabState_Neutral", "kCrabState_Friendly", "kCrabState_Dark", "kCrabState_Corrupted"};
+    params += "do local p = OffsetLab[\"" + slot + "\"]\n"
+              "if not pcall(function() p:crabType(\"" + std::string(kTypes[T.crabType]) + "\") end) then "
+              "pcall(function() p:crabType(" + std::to_string(T.crabType) + ") end) end\n";
+    if (T.crabMood > 0)
+        params += "if not pcall(function() p:crabState(\"" + std::string(kMoods[T.crabMood]) + "\") end) and print then "
+                  "pcall(print, \"Offset Lab: crab mood not taken\") end\n";
+    params += "end\n";
+    if (T.crabDark || T.crabMood >= 2) MaybeInvincible("Dark crabs");
     std::string s = std::string(FeatureLuaPrelude()) + "stop(\"spCrabs\")\n" + params + ev;
     if (Run(std::to_string(T.crabCount) + (T.crabDark ? " dark crabs" : " crabs") + " in front of you", s, "spCrabs")) {
         T.crabOn = true;
@@ -702,7 +715,13 @@ void SpawnTab() {
         FloatSlider("##cbs", &T.crabSize, 0.25f, 1.f, "%.2f");
         ImGui::TextUnformatted("Distance in front of you");
         FloatSlider("##cbd", &T.crabDist, 2.f, 15.f, "%.0f m");
-        ImGui::Checkbox("Dark crabs##cb", &T.crabDark);
+        static const char* kTypeNames[] = {"Normal", "Hermit", "Zombie"};
+        static const char* kMoodNames[] = {"Neutral", "Friendly", "Dark", "Corrupted"};
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+        ImGui::Combo("Type##cbt", &T.crabType, kTypeNames, 3);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+        if (ImGui::Combo("Mood##cbm", &T.crabMood, kMoodNames, 4)) T.crabDark = T.crabMood == 2;
+        if (ImGui::Checkbox("Dark crabs##cb", &T.crabDark)) T.crabMood = T.crabDark ? 2 : 0;
         if (ImGui::Button("Crabs##cb", ImVec2(ImGui::GetContentRegionAvail().x * 0.5f - 4, 0))) Crabs();
         ImGui::SameLine();
         ImGui::BeginDisabled(!T.crabOn);
