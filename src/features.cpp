@@ -1609,11 +1609,29 @@ void ItemsSection() {
                 StartEvent(std::string(kFx[i].label) + " animation", "", kFx[i].type, {});
         }
     }
-    Dim("Left out because they also send or grant something: cape level up (CapeUpgradeFx, LevelUpFx: send an Rpc), "
-        "fake winged light drop (FakeWingBuffDropEvent: WingBuffDropRpc), quest banner (UIQuestBanner: consumable "
-        "request), candle spending / wax pickup (SpendingFx: PickUpRequestRpc; WaxPickupEffect: gift and pickup "
-        "requests), friendship level up (TrustGainIndicator: an Rpc; TrustLevelUpEvent: event candle code, needs a "
-        "spirit). RewardAnim draws an image only the game's code can give it.");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("More effects (the game's own debug commands, as TSM uses them)");
+    Dim("Nothing is added to your account. These may send the effect to players near you (the game's own Fx "
+        "messages), so others can see them too.");
+    {
+        struct Cmd { const char* label; const char* lua; };
+        static const Cmd kCmd[] = {
+            {"Purchase", "local e = game:eventBarn():AddEventByMetaName(\"PlayPurchaseFX\")\n"
+                         "if not e then error(\"PlayPurchaseFX isn't in this build\") end\n"
+                         "pcall(function() e:invisibleItem(false) end)\ne:Start()\n"},
+            {"Level up", "if type(LevelUp) ~= \"function\" then error(\"LevelUp isn't in this build\") end\nLevelUp(game)\n"},
+            {"Cape upgrade", "if type(CapeUpgrade) ~= \"function\" then error(\"CapeUpgrade isn't in this build\") end\n"
+                             "CapeUpgrade(game)\n"},
+            {"Explosion", "if type(DEBUG_TestExplosionFx) ~= \"function\" then error(\"DEBUG_TestExplosionFx isn't in "
+                          "this build\") end\nDEBUG_TestExplosionFx(game)\n"},
+        };
+        for (int i = 0; i < (int)IM_ARRAYSIZE(kCmd); i++) {
+            if (i % 2) ImGui::SameLine();
+            if (ImGui::Button(kCmd[i].label, ImVec2(Px(250), 0)))
+                Run(std::string(kCmd[i].label) + " animation", kCmd[i].lua, std::string("fx:") + kCmd[i].label);
+        }
+    }
+    Dim("Not found as a visual-only route: candle / seasonal candle / spell / gift reward animations.");
 
     Section("PROPS", nullptr);
     NotPossible("Bucket brigade",
