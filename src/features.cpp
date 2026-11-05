@@ -224,7 +224,10 @@ bool OneShot(const char* type) {
         // 0.14.0: stops itself when its fireOnce (+0x26) is set (update 0x124BE88); only ever started with it
         "AvatarExitFlight",
         // 0.15.0 (Spawn tab): stops itself once every start position's star has landed (update 0x205DCDC, 0x205E5AC)
-        "StarFallShower"};
+        "StarFallShower",
+        // 0.16.0 (Reward animations): screen Fx that stop themselves when drawn (GetEmoteFx update 0x1F6CCA0 and
+        // BreakEmoteFx 0x1F6367C end in 0x1720558; StarBlingFx 0x18FA6EC in 0x171F82C)
+        "GetEmoteFx", "BreakEmoteFx", "StarBlingFx"};
     for (const char* t : kOnce)
         if (!strcmp(t, type)) return true;
     return false;
@@ -1592,6 +1595,25 @@ void ItemsSection() {
         StopEvent("Closet removed", "closet"), X.closet = false;
     Dim("Experimental: a closet button on the ground under the camera, near you (OutfitSelect as a closet, its button "
         "marker put at the camera). Gone after a level change.");
+
+    Section("REWARD ANIMATIONS (visual only)",
+            "The game's own reward flourishes, on your screen only. Nothing is given: these Fx draw and end by "
+            "themselves; their code (0.35.2) sends no server request or Rpc and writes no currency or unlock.");
+    {
+        struct Fx { const char* label; const char* type; };
+        static const Fx kFx[] = {{"New emote", "GetEmoteFx"}, {"Emote break", "BreakEmoteFx"},
+                                 {"Winged light star bling", "StarBlingFx"}};
+        for (int i = 0; i < (int)IM_ARRAYSIZE(kFx); i++) {
+            if (i % 2) ImGui::SameLine();
+            if (ImGui::Button(kFx[i].label, ImVec2(Px(250), 0)))
+                StartEvent(std::string(kFx[i].label) + " animation", "", kFx[i].type, {});
+        }
+    }
+    Dim("Left out because they also send or grant something: cape level up (CapeUpgradeFx, LevelUpFx: send an Rpc), "
+        "fake winged light drop (FakeWingBuffDropEvent: WingBuffDropRpc), quest banner (UIQuestBanner: consumable "
+        "request), candle spending / wax pickup (SpendingFx: PickUpRequestRpc; WaxPickupEffect: gift and pickup "
+        "requests), friendship level up (TrustGainIndicator: an Rpc; TrustLevelUpEvent: event candle code, needs a "
+        "spirit). RewardAnim draws an image only the game's code can give it.");
 
     Section("PROPS", nullptr);
     NotPossible("Bucket brigade",
