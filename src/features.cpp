@@ -19,6 +19,8 @@
 #include "canvas_api.h"
 #include "imgui.h"
 #include "json.h"
+#include "dobby.h"
+#include <atomic>
 
 namespace lab {
 
@@ -438,6 +440,37 @@ bool SetSwitch(const char* what, uint32_t off, bool on) {
 constexpr uint32_t kCollisionCallAt = 0x296CAD0;
 constexpr uint32_t kCollisionCall = 0x94000C7C;  // bl 0x296FCC0
 constexpr uint32_t kNop = 0xD503201F;
+
+bool SetFreeZoom(bool on);  // after SetCodePatch
+
+// First-person view: a Dobby pre-call hook on the camera update (0x29213EC, x0 = camera) zeroes the camera distance
+// (+0x5A8) while on. Placed the first time it's switched on, after checking the function's first word.
+std::atomic<bool> gFpv{false};
+bool gFpvHooked = false;
+void FpvHook(void*, DobbyRegisterContext* ctx) {
+    if (!gFpv.load(std::memory_order_relaxed)) return;
+    uintptr_t cam = ctx->general.regs.x0;
+    float d = 1.f;
+    if (cam && ReadMemory(cam + 0x5A8, &d, 4) && std::isfinite(d)) *reinterpret_cast<float*>(cam + 0x5A8) = 0.f;
+}
+bool SetFirstPerson(bool on) {
+    if (on && !gFpvHooked) {
+        uint32_t first = 0;
+        uintptr_t a = GameBase() + 0x29213EC;
+        if (!GameBase() || !ReadMemory(a, &first, 4) || first != 0xD10343FFu) {
+            Log("First-person view: the camera function isn't what 0.35.2 has (0x%08X)", first);
+            return false;
+        }
+        if (DobbyInstrument(reinterpret_cast<void*>(a), FpvHook) != 0) {
+            Log("First-person view: couldn't hook the camera function");
+            return false;
+        }
+        gFpvHooked = true;
+    }
+    gFpv = on;
+    Log("First-person view %s", on ? "on" : "off");
+    return true;
+}
 
 bool SetNoCollision(bool on) {
     uint32_t cur = 0;
@@ -1169,8 +1202,16 @@ void CameraSection() {
     }
     Dim("Drone mode: the game's DebugCamera isn't an event, so it can't be started from here. Sunglasses was "
         "removed: it crashed the game when switched off (it has settings Offset Lab can't see to fill in).");
-    Dim("First-person view and unlimited zoom need changes to the game's camera code that I haven't checked for "
-        "0.35.2 yet; they'll come in a later version.");
+    static bool freeZoom = false;
+    if (Toggle("Unlimited zoom", &freeZoom,
+               "Pinch the camera as far in or out as you like (the camera's zoom clamp store, 0x291F078, skipped; as "
+               "in TSM). Off: the game's code put back."))
+        if (!SetFreeZoom(freeZoom)) freeZoom = !freeZoom;
+    static bool fpv = false;
+    if (Toggle("First-person view", &fpv,
+               "The camera sits in your avatar's head: its distance (+0x5A8) is set to 0 each time the game's camera "
+               "update (0x29213EC) runs, as TSM does. Experimental. Off: normal camera."))
+        if (!SetFirstPerson(fpv)) fpv = false;
 }
 
 void WorldSection() {
@@ -1252,6 +1293,14 @@ void ShoutSection() {
 // so switching off after a crash of the mod still works) and put back exactly when switched off.
 struct CodePatch { const char* what; uint32_t at; uint32_t original; uint32_t patched; };
 
+// Scooter mode (as TSM has it): the avatar move code (0x12343FC) loads a byte that, when set, zeroes the ground
+// velocity before the position update; forcing it to 1 (mov w8,#1) gives TSM's "no movement animation" glide.
+const CodePatch kScooterPatch = {"Scooter mode", 0x12343FC, 0x38686808u /* ldrb w8, [x0, x8] */,
+                                 0x52800028u /* mov w8, #1 */};
+// Unlimited zoom (as TSM has it): the whisker camera update stores its clamped zoom distance (str s0,[x19,#0x5b0] at
+// 0x291F078); without that store the camera keeps whatever distance you pinch to.
+const CodePatch kFreeZoomPatch = {"Unlimited zoom", 0x291F078, 0xBD05B260u /* str s0, [x19, #0x5b0] */, kNop};
+
 // Unlock all: the game's "account has unlock" check (0xDFC144, bool (barn, name)) returns 1 when the name is in its
 // first set (0xEE74F8 lookup), otherwise the result of a second lookup. The branch to the second lookup
 // (0xDFC174, cbz x0) becomes a NOP, so the function always returns 1. One aligned word: always a whole instruction.
@@ -1277,6 +1326,12 @@ bool SetCodePatch(const CodePatch& p, bool on) {
         return false;
     }
     return true;
+}
+
+bool SetFreeZoom(bool on) {
+    bool ok = SetCodePatch(kFreeZoomPatch, on);
+    if (ok) Log("Unlimited zoom %s", on ? "on" : "off");
+    return ok;
 }
 
 // The game's debug switches (bytes, 0 normally; TSM's labels): kInvincibility (energy and breath only go up, breath
@@ -2163,13 +2218,10 @@ void PlayerMoreMovement() {
     PatchToggle("Fast flap", &PM.fastFlap, kFastFlapPatch,
                 "Flap again sooner: the time a flap keeps you busy (normally 1-2 s, 0x22D49F0) is 0.5 s, the "
                 "game's own shortest. Each flap still costs energy. Off: the game's code put back.");
-    ImGui::BeginDisabled();
-    bool no = false;
-    ImGui::Checkbox("Scooter mode", &no);
-    ImGui::EndDisabled();
-    Dim("Not added: the code TSM labels scooter mode (0x12343FC) reads a byte (+0x3810 of the object from 0x15E45D8) "
-        "that, on the ground, zeroes your velocity just before the position update (0x123440C). That stops you; it "
-        "isn't a scooter, and what sets that byte isn't known.");
+    static bool scooter = false;
+    PatchToggle("Scooter mode", &scooter, kScooterPatch,
+                "Glide along without the walking animation, as in TSM (0x12343FC forced to 1). Experimental. Off: the "
+                "game's code put back.");
     if (Toggle("Freeze in place", &PM.freeze,
                "Holds you where you are now: the game's AvatarSetPos moves you back to that spot (momentum killed) "
                "5 times a second, the same move Teleport uses. It lets go by itself on a level change or teleport. Off: "
