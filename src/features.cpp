@@ -1539,7 +1539,7 @@ void MusicSection() {
     if (ImGui::Button("Audio settings", ImVec2(Px(250), 0))) StartEvent("Audio settings", "", "AudioSettingsMenu", {});
     ImGui::SameLine();
     if (ImGui::Button("Apple Music menu", ImVec2(Px(250), 0))) StartEvent("Apple Music menu", "", "OpenAppleMusicMenu", {});
-    Dim("Not added yet: playing your own songs note by note (TSM's custom sheets play the piano natively).");
+    CustomSongsSection();
 }
 
 void WorldSection() {
@@ -2771,6 +2771,7 @@ bool GameIcon(const std::string& name, float size) { return DrawIcon(name, size)
 
 // Repeating actions; called every frame from Draw, whichever tab is open.
 void FeaturesTick() {
+    MusicTick();
     if (!GameObject()) return;
     double t = ImGui::GetTime();
     if (F.scatter && t >= F.scatterNext) {

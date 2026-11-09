@@ -137,7 +137,9 @@ void FeaturesTab();      // features.cpp: ready-made controls (toggles, sliders,
 void FeaturesTick();     // features.cpp: repeating actions, every frame
 void TeleportSection();  // teleport.cpp: the Features tab's Teleport sub-tab
 void SpawnTab();         // spawn.cpp: the Spawn tab (creature schools, shards, developer school switch)
-void SpawnTick();        // spawn.cpp: results of the game-thread calls, every frame
+void SpawnTick();
+void MusicTick();           // music.cpp: custom song playback, every frame
+void CustomSongsSection();  // music.cpp: the Music sub-tab's custom songs        // spawn.cpp: results of the game-thread calls, every frame
 bool LocalAvatarPos(float out[3], float* yaw = nullptr);  // teleport.cpp: your avatar's position (read natively)
 bool HoldAvatarAt(const float pos[3]);  // teleport.cpp: AvatarSetPos to pos, quietly (queue key "freeze")
 std::string CurrentLevelId();  // teleport.cpp: the current level id ("" if unreadable)
