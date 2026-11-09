@@ -2678,7 +2678,7 @@ void FeaturesTab() {
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
-                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Sky", "Spawn"};
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
     bool collapsed = FeaturesTabsCollapsed();
