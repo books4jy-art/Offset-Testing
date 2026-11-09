@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "AvatarGrindToPos", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -1416,6 +1416,52 @@ void SkySection() {
         snprintf(v, sizeof v, "{%.3f, 0, %.3f}", sinf(rad), cosf(rad));
         StartEvent("Wind push " + Num(SK.push), "", "SetWind", {{"windForce", Num(SK.push), ""}, {"windDir", v, ""}});
     }
+}
+
+// Effects & toys (0.18.0): the Weather, sky & visuals events that need no game objects. Wing/footstep effects and
+// the snow props run while on (kept, switched off with SetEnabled(false)); the rest are one-shots.
+struct VisToggle { const char* label; const char* type; bool on; };
+VisToggle gVisToggles[] = {
+    {"Almond blossom wings", "AlmondBlossomWingEffects", false}, {"Anniversary 2026 wings", "Anni2026WingEffects", false},
+    {"Blue tear wings", "BlueTearWingEffects", false},           {"Bluebird wings", "BluebirdWingEffects", false},
+    {"Maypole wings", "MaypoleWingEffects", false},             {"Flower footsteps", "FlowerFootstepEffects", false},
+    {"Flower horn", "FlowerHornEffects", false},                 {"Snowboard", "Snowboard", false},
+    {"Snowball mittens", "SnowBallMittens", false},
+};
+void EffectsSection() {
+    Section("WING & FOOTSTEP EFFECTS, PROPS", "The game's own effect events, on your screen. Off switches them off.");
+    for (auto& t : gVisToggles) {
+        ImGui::PushID(t.type);
+        if (ImGui::Checkbox(t.label, &t.on)) {
+            if (t.on) StartEvent(std::string(t.label) + " on", std::string("vis:") + t.type, t.type, {});
+            else StopEvent(std::string(t.label) + " off", std::string("vis:") + t.type);
+        }
+        ImGui::PopID();
+    }
+    Section("ONE-OFF EFFECTS", nullptr);
+    struct Once { const char* label; const char* type; };
+    static const Once kOnce[] = {{"Starry umbrella (toggle)", "SocialToggleStarryUmbrella"},
+                                 {"Starry outfit", "SocialStarryOutfitEvent"},
+                                 {"Fireworks", "SocialFireworks"},
+                                 {"Riddle shrine answer", "RiddleShrineNoteAnswerEffect"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kOnce); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kOnce[i].label, ImVec2(Px(250), 0))) StartEvent(kOnce[i].label, "", kOnce[i].type, {});
+    }
+    if (ImGui::Button("Launch firework here", ImVec2(Px(250), 0))) {
+        float p[3];
+        if (!LocalAvatarPos(p)) {
+            Log("Launch firework: your position couldn't be read");
+        } else {
+            char b[160];
+            snprintf(b, sizeof b, "OffsetLab.fwM:pos({%.3f, %.3f, %.3f})\n", p[0], p[1] + 1.f, p[2]);
+            Run("", std::string(kPrelude) + "OffsetLab.fwM = OffsetLab.fwM or game:markerBarn():CreateMarker(0)\n" + b,
+                "fwm");
+            StartEvent("Firework", "", "LaunchFirework", {{"sourceMarker", "OffsetLab.fwM", ""}});
+        }
+    }
+    Dim("Not added from this page: footstep/trail events with hidden settings (use Items > Walk effects), firework "
+        "bursts/rockets, credits, art book and mesh/water/ocean/spirit-shader events (they need level objects).");
 }
 
 void WorldSection() {
@@ -2731,7 +2777,7 @@ void FeaturesTab() {
             case 8: TeleportSection(); break;
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
-            case 11: SkySection(); break;
+            case 11: SkySection(); EffectsSection(); break;
             case 12: SpawnTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
