@@ -1979,10 +1979,12 @@ void SetUnlight(bool on) {
 // 0x11859BC, the friend record; strangers have none); its tbz at 0x1D94810 becomes a NOP so that row isn't locked.
 // The offer itself (the button's press, 0x1D78E14) needs no friend record: it calls the game's own offer
 // (0x118DE84: your avatar, the ability, the target's avatar id at button +0x2DC), which is what other players see.
-const CodePatch kStrangerPatches[2] = {
+constexpr uint32_t kAllAbilitiesSwitch = 0x3455E25;  // byte, 0 normally; TSM's kEnableAllRelationshipAbilities
+const CodePatch kStrangerPatches[1] = {
     {"Offer emotes to strangers", 0x1D97D6C, 0x97E8271Du /* bl 0x17a19e0 */, 0x52800020u /* mov w0, #1 */},
-    {"Offer emotes to strangers", 0x1D94810, 0x360007E0u /* tbz w0, #0, #0x1d9490c */, kNop},
 };
+// (0.16.4: the second patch, 0x1D94810 "base ability bought with this friend", made every upgraded ability show
+// next to its base: emotes appeared twice. Dropped; TSM doesn't patch it either.)
 
 void SocialSection() {
     Section("SOCIAL", nullptr);
@@ -2067,10 +2069,10 @@ void SocialSection() {
     if (Toggle("Offer emotes to strangers", &SO.strangers,
                "Tap a player you haven't befriended and the game's player menu shows the friendship abilities (hold "
                "hands, high five, hug, carry...) as it does for a friend: the menu's \"is a friend\" check "
-               "(0x1D97D6C) and the \"bought the base ability with this friend\" check (0x1D94810) say yes. Use it "
+               "(0x1D97D6C) says yes. Use it "
                "with Unlock friendship tree below, or the abilities stay locked at friendship level 0. Off: the "
                "game's code put back (reopen the menu).")) {
-        if (!SetPatchPair(kStrangerPatches, SO.strangers)) SO.strangers = !SO.strangers;
+        if (!SetCodePatch(kStrangerPatches[0], SO.strangers)) SO.strangers = !SO.strangers;
         else Log("Offer emotes to strangers %s", SO.strangers ? "on" : "off");
     }
     if (SO.strangers && !SO.tree) ImGui::TextColored(kAmber300, "Switch on Unlock friendship tree too.");
@@ -2091,6 +2093,9 @@ void SocialSection() {
                 Log("Friendship tree: the game's tier list isn't loaded (enter the world, open a friend's menu once)");
                 SO.tree = false;
             } else if (SetTree(n)) {
+                // as TSM: the game's "enable all relationship abilities" switch too, so abilities aren't
+                // offered for candles first (its readers skip the purchase/gift checks)
+                SetSwitch("All relationship abilities", kAllAbilitiesSwitch, true);
                 SO.treeLevels = n;
                 SO.treeCheck = ImGui::GetTime() + 2.0;
                 Log("Friendship tree unlocked (%d levels)", n);
@@ -2098,13 +2103,14 @@ void SocialSection() {
                 SO.tree = false;
             }
         } else {
+            SetSwitch("All relationship abilities", kAllAbilitiesSwitch, false);
             if (SetTree(0)) SO.treeLevels = 0, Log("Friendship tree back to normal");
             else SO.tree = true;
         }
     }
     if (SO.tree) Dim("Reporting level %d.", SO.treeLevels);
-    Dim("Not used: TSM's \"enable all relationship abilities\" byte (0x3455E25). Its readers (0x1D76B6C, 0x1D80B48, "
-        "0x1D82948) only skip a menu restriction and the gift/purchase checks, so it isn't the friendship tree.");
+    Dim("Also sets the game's \"enable all relationship abilities\" switch (0x3455E25, as TSM does), so abilities "
+        "aren't asked for with candles first.");
 
     Section("OTHER", nullptr);
     if (Toggle("Audience mode (experimental)", &X.audience,
