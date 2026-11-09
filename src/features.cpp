@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "AvatarGrindToPos", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -1462,6 +1462,84 @@ void EffectsSection() {
     }
     Dim("Not added from this page: footstep/trail events with hidden settings (use Items > Walk effects), firework "
         "bursts/rockets, credits, art book and mesh/water/ocean/spirit-shader events (they need level objects).");
+}
+
+// Music (0.20.0). Instrument switches: the game's own bytes (as TSM uses them; 0.35.2 addresses from the port).
+// Music: PlayMusic (netSync off, so only you hear it), PlayMusic with no name stops; SetMusicKey; PlaySound2D;
+// the game's audio menus. Song and sound ids are the game's own names (the Aurora songs as TSM lists them).
+struct InstrSwitch { const char* label; uint32_t at; bool on; const char* help; };
+InstrSwitch gInstr[] = {
+    {"Reverb", 0x34574F0, false, "Adds reverb to instruments."},
+    {"Auto-play sheets", 0x34B5890, false, "Instruments play the open sheet music by themselves."},
+    {"Easy mode", 0x34B58A0, false, "The game's easy instrument mode."},
+    {"Radial layout", 0x34B58BC, false, "The radial key layout instead of the grid."},
+};
+float gMusicVol = 1.f, gMusicKey = 0.f, gSoundVol = 1.f;
+char gMusicId[64] = "", gSoundId[64] = "";
+
+void PlaySong(const char* id) {
+    StartEvent(std::string("Music ") + (*id ? id : "stop"), "", "PlayMusic",
+               {{"music", Quote(id), ""}, {"volume", Num(gMusicVol), ""}, {"setVolume", "true", ""},
+                {"foreground", "true", ""}, {"netSync", "false", ""}, {"continueIfSame", "false", ""}});
+}
+
+void MusicSection() {
+    Section("INSTRUMENTS", "The game's instrument switches (as TSM has them). Off: back to normal.");
+    for (auto& i : gInstr) {
+        ImGui::PushID(i.label);
+        if (Toggle(i.label, &i.on, i.help))
+            if (!SetSwitch(i.label, i.at, i.on)) i.on = !i.on;
+        ImGui::PopID();
+    }
+
+    Section("MUSIC PLAYER", "Plays the game's own music, only for you (not synced to others).");
+    ImGui::TextUnformatted("Volume");
+    Slider("musvol", &gMusicVol, 0.f, 1.f, 1.f, "%.2f");
+    static const char* kSongs[][2] = {{"Star Calm", "starcalm"}, {"All is Soft Inside", "allissoftinside"},
+                                      {"Exhale Inhale", "exhaleinhale"}, {"Queendom", "queendom"},
+                                      {"Runaway", "runaway"}, {"The Seed", "theseed"},
+                                      {"The Seed Concert", "theseedconcert"},
+                                      {"Through the Eyes of a Child", "throughtheeyesofachild"},
+                                      {"Warrior", "warrior"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kSongs); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kSongs[i][0], ImVec2(Px(250), 0))) PlaySong(kSongs[i][1]);
+    }
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    ImGui::InputTextWithHint("##mid", "another music id", gMusicId, sizeof gMusicId);
+    ImGui::SameLine();
+    if (ImGui::Button("Play##mid") && gMusicId[0]) PlaySong(gMusicId);
+    ImGui::SameLine();
+    if (ImGui::Button("Stop music")) PlaySong("");
+    ImGui::TextUnformatted("Music key");
+    if (int r = Slider("muskey", &gMusicKey, -12.f, 12.f, 0.f, "%.0f"))
+        StartEvent("Music key " + Num(gMusicKey), "", "SetMusicKey",
+                   {{"value", Num(r == 2 ? 0.f : gMusicKey), ""}, {"overrideFloat", "nil", ""}});
+
+    Section("SOUNDS", nullptr);
+    ImGui::TextUnformatted("Volume");
+    Slider("sndvol", &gSoundVol, 0.f, 1.f, 1.f, "%.2f");
+    static const char* kSounds[] = {"BellActivate", "BlessingGain", "AuroraOrbLight", "AvatarFlame",
+                                    "AP24ClockChimeTune", "AP16ConcertCheerOneshot2D", "AlicePortalOpen",
+                                    "AnniversaryCannon", "AP25DyeCollect", "BoomHit"};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kSounds); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kSounds[i], ImVec2(Px(250), 0)))
+            StartEvent(std::string("Sound ") + kSounds[i], "", "PlaySound2D",
+                       {{"sound", Quote(kSounds[i]), ""}, {"volume", Num(gSoundVol), ""}});
+    }
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    ImGui::InputTextWithHint("##sid", "another sound name", gSoundId, sizeof gSoundId);
+    ImGui::SameLine();
+    if (ImGui::Button("Play##sid") && gSoundId[0])
+        StartEvent(std::string("Sound ") + gSoundId, "", "PlaySound2D",
+                   {{"sound", Quote(gSoundId), ""}, {"volume", Num(gSoundVol), ""}});
+
+    Section("MENUS", nullptr);
+    if (ImGui::Button("Audio settings", ImVec2(Px(250), 0))) StartEvent("Audio settings", "", "AudioSettingsMenu", {});
+    ImGui::SameLine();
+    if (ImGui::Button("Apple Music menu", ImVec2(Px(250), 0))) StartEvent("Apple Music menu", "", "OpenAppleMusicMenu", {});
+    Dim("Not added yet: playing your own songs note by note (TSM's custom sheets play the piano natively).");
 }
 
 void WorldSection() {
@@ -2755,7 +2833,7 @@ void FeaturesTab() {
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
-                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn"};
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn", "Music"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
     bool collapsed = FeaturesTabsCollapsed();
@@ -2809,7 +2887,8 @@ void FeaturesTab() {
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
             case 11: SkySection(); break;
-            case 12: SpawnTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
+            case 12: SpawnTab(); break;
+            case 13: MusicSection(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
     TouchScroll();
