@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -784,15 +784,33 @@ void SetFloatVar(const char* what, uint32_t off, float v) {
     Log("%s %.2f%s", what, v, ok ? "" : " (write failed)");
 }
 
+// Auto walk (0.16.5): the game's AvatarGrindToPos walks you toward a target clump; the target marker is kept ahead
+// of you in the chosen direction (moved every 0.25 s from your live position). SetAvatarVelocity was dropped: it
+// writes velocityZ into the Y slot (0x123B538), so "forward" pushed you up. The grind event ends itself on arrival, so
+// it's a one-shot (never kept or switched off): Off puts the target where you stand, so it arrives and ends.
+double gWalkNext = 0, gWalkRestart = 0;
+void WalkMarker(bool ahead) {
+    float p[3];
+    if (!LocalAvatarPos(p, nullptr)) return;
+    float rad = M.walkDir * 3.14159265f / 180.f, d = ahead ? std::max(6.f, M.walkSpeed * 3.f) : 0.f;
+    char b[200];
+    snprintf(b, sizeof b, "OffsetLab.walkM:pos({%.3f, %.3f, %.3f})\n", p[0] + sinf(rad) * d, p[1], p[2] + cosf(rad) * d);
+    Run("", std::string(kPrelude) +
+                "if not OffsetLab.walkM then OffsetLab.walkM = game:markerBarn():CreateMarker(0)\n"
+                "  local c = game:clumpBarn():CreateClumpWithSize(1); c:SetAt(0, OffsetLab.walkM); OffsetLab.walkC = c end\n" +
+                b,
+        "walkm");
+}
+void WalkStart() {
+    StartEvent("", "", "AvatarGrindToPos",
+               {{"target", "OffsetLab.walkC", ""}, {"speed", Num(std::max(0.5f, M.walkSpeed)), ""},
+                {"comeToStop", "false", ""}, {"smoothTurning", "true", ""}, {"breakHandhold", "false", ""}});
+}
 void Walk() {
-    if (!M.walk) {
-        StopEvent("Auto walk off", "walk");
-        return;
-    }
-    float rad = M.walkDir * 3.14159265f / 180.f;
-    StartEvent("Auto walk " + Num(M.walkSpeed) + " at " + Num(M.walkDir) + " deg", "walk", "SetAvatarVelocity",
-               {{"velocityX", Num(M.walkSpeed * sinf(rad)), ""}, {"velocityZ", Num(M.walkSpeed * cosf(rad)), ""},
-                {"setVelocityX", "true", ""}, {"setVelocityZ", "true", ""}, {"fireOnce", "false", ""}});
+    gWalkNext = gWalkRestart = 0;
+    WalkMarker(M.walk);
+    if (M.walk) WalkStart(), Log("Auto walk %.1f at %.0f deg", M.walkSpeed, M.walkDir);
+    else Log("Auto walk off");
 }
 
 void Bounce(bool quiet) {
@@ -864,7 +882,7 @@ void PlayerSection(bool inWorld) {
         StartEvent("Speed " + Num(F.speed), "speed", "SetAvatarRunSpeedMult", {{"runSpeed", Num(F.speed), ""}});
 
     ImGui::TextUnformatted("Auto walk");
-    Dim("Moves you at a set speed in a fixed direction (degrees around the world, 0 = the level's forward).");
+    Dim("Walks you at a set speed in a fixed direction (degrees around the world, 0 = the level's forward), with the game's own walk-to-a-point (AvatarGrindToPos).");
     if (ImGui::Checkbox("Auto walk on", &M.walk)) Walk();
     if (Slider("walkspeed", &M.walkSpeed, 0.f, 20.f, 3.f, "speed %.1f") && M.walk) Walk();
     if (Slider("walkdir", &M.walkDir, 0.f, 360.f, 0.f, "%.0f deg") && M.walk) Walk();
@@ -2525,6 +2543,11 @@ void FeaturesTick() {
     if (F.kill && t >= M.killNext) {
         M.killNext = t + 3.0;
         StartEvent("", "", "KillLocalAvatar", {});
+    }
+    if (M.walk && t >= gWalkNext) {
+        gWalkNext = t + 0.25;
+        WalkMarker(true);
+        if (t >= gWalkRestart) gWalkRestart = t + 2.0, WalkStart();  // in case the game stopped following
     }
     if (M.crawlStopAt > 0 && t >= M.crawlStopAt) {
         M.crawlStopAt = 0;
