@@ -2770,14 +2770,14 @@ void FeaturesTab() {
             case 1: EnergySection(); break;
             case 2: TransformSection(); ModesSection(); break;
             case 3: OutfitsSection(); break;
-            case 4: ItemsSection(); break;
+            case 4: ItemsSection(); EffectsSection(); break;
             case 5: EmotesSection(); break;
             case 6: CameraSection(); break;
             case 7: WorldSection(); break;
             case 8: TeleportSection(); break;
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
-            case 11: SkySection(); EffectsSection(); break;
+            case 11: SkySection(); break;
             case 12: SpawnTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
