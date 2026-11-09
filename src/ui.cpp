@@ -1548,7 +1548,14 @@ void Draw(bool* open) {
     static const char* kTabs[] = {"Game functions", "Lua", "Memory", "Native", "Log", "Features", "Other offsets",
                                   "Recorder",       "Spawn"};
     static const int kOrder[] = {5, 8, 7, 0, 1, 2, 3, 6, 4};  // shown order; S.tab / S.openTab keep the indexes above
-    if (ImGui::BeginTabBar("##tabs")) {
+    // 0.17.1: the main tab row is hidden (kept, not deleted): the panel shows the Features tab only. Flip
+    // kShowMainTabs back to true to bring Spawn, Recorder, Game functions, Lua, Memory, Native, Other offsets and Log
+    // back.
+    constexpr bool kShowMainTabs = false;
+    if (!kShowMainTabs) {
+        S.tab = 5;
+        FeaturesTab();
+    } else if (ImGui::BeginTabBar("##tabs")) {
         for (int i : kOrder) {
             ImGuiTabItemFlags f = (S.openTab == i) ? ImGuiTabItemFlags_SetSelected : 0;
             if (ImGui::BeginTabItem(kTabs[i], nullptr, f)) {
