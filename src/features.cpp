@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "AvatarGrindToPos", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -1313,6 +1313,109 @@ void CameraSection() {
                "The camera sits in your avatar's head: its distance (+0x5A8) is set to 0 each time the game's camera "
                "update (0x29213EC) runs, as TSM does. Experimental. Off: normal camera."))
         if (!SetFirstPerson(fpv)) fpv = false;
+}
+
+// ---------------------------------------------------------------- Sky (0.17.0): environment, clouds, weather
+// Environment: the game's own environment values (TheVoid's world.environment.* table, ported to 0.35.2; defaults read
+// from the game file: most 1.0, sun height 45, moon phase 0.5, draw distance 15000, fog height 0.1, fog brightness
+// 0.8). The override switch (0x30B00A8, TheVoid's world.environment.enable / TSM's allow override) is set while any
+// is changed. Each value is checked to be a finite, sane float before writing; Reset writes the default back.
+struct EnvVar { const char* label; uint32_t at; float lo, hi, def; bool needsOverride; };
+const EnvVar kEnv[] = {
+    {"Exposure", 0x2DFFBEC, 0.f, 4.f, 1.f, false},       {"Sun intensity", 0x2DFFBF0, 0.f, 4.f, 1.f, false},
+    {"Sun height", 0x2DFFBF4, -90.f, 90.f, 45.f, false}, {"Sun sideways", 0x30B00B8, 0.f, 360.f, 0.f, true},
+    {"Sun size", 0x2DFFBF8, 0.f, 5.f, 1.f, false},       {"Sun to moon", 0x30B00BC, 0.f, 1.f, 0.f, true},
+    {"Eclipse", 0x30B00C0, 0.f, 1.f, 0.f, true},         {"Moon phase", 0x2DFFBFC, 0.f, 1.f, 0.5f, false},
+    {"Draw distance", 0x2DFFBE8, 1000.f, 50000.f, 15000.f, false},
+    {"Underwater bloom", 0x2DFFC00, 0.f, 4.f, 1.f, false}, {"Fog density", 0x2DFFBDC, 0.f, 4.f, 1.f, false},
+    {"Fog height", 0x2DFFBE4, 0.f, 2.f, 0.1f, false},    {"Fog brightness", 0x2DFFBD4, 0.f, 2.f, 0.8f, false},
+    {"Atmosphere density", 0x2DFFBE0, 0.f, 4.f, 1.f, false},
+    {"Point light (unverified)", 0x2DFFC04, 0.f, 4.f, 1.f, false},
+};
+constexpr uint32_t kEnvOverride = 0x30B00A8;
+float gEnv[IM_ARRAYSIZE(kEnv)];
+bool gEnvRead = false;
+
+bool EnvWrite(const EnvVar& e, float v) {
+    float cur = 0;
+    if (!GameBase() || !ReadMemory(GameBase() + e.at, &cur, 4) || !std::isfinite(cur) || std::fabs(cur) > 1e6f) {
+        Log("%s: the value at 0x%X doesn't look right; not changed", e.label, e.at);
+        return false;
+    }
+    if (e.needsOverride) SetSwitch("Environment override", kEnvOverride, true);
+    bool ok = WriteGameMemory(e.at, &v, 4);
+    Log("%s %.2f%s", e.label, v, ok ? "" : " (write failed)");
+    return ok;
+}
+
+struct SkyState {
+    bool clouds = true;
+    float cloudScroll = 0.f;
+    float rainRate = 4.f, rainIntensity = 1.f, rainOsc = 0.5f;
+    float wind = 5.f;
+    float push = 0.f, pushDir = 0.f;
+} SK;
+
+void SkySection() {
+    if (!gEnvRead && GameBase()) {
+        gEnvRead = true;
+        for (int i = 0; i < (int)IM_ARRAYSIZE(kEnv); i++) {
+            float v = kEnv[i].def;
+            if (ReadMemory(GameBase() + kEnv[i].at, &v, 4) && std::isfinite(v) && std::fabs(v) < 1e6f) gEnv[i] = v;
+            else gEnv[i] = kEnv[i].def;
+        }
+    }
+    Section("ENVIRONMENT", "The game's own sky and light values, on your screen only. Reset = the game's default.");
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kEnv); i++) {
+        ImGui::TextUnformatted(kEnv[i].label);
+        int r = Slider(kEnv[i].label, &gEnv[i], kEnv[i].lo, kEnv[i].hi, kEnv[i].def,
+                       kEnv[i].hi > 1000 ? "%.0f" : "%.2f");
+        if (r) EnvWrite(kEnv[i], gEnv[i]);
+    }
+    if (ImGui::Button("Reset all environment")) {
+        for (int i = 0; i < (int)IM_ARRAYSIZE(kEnv); i++) gEnv[i] = kEnv[i].def, EnvWrite(kEnv[i], kEnv[i].def);
+        SetSwitch("Environment override", kEnvOverride, false);
+    }
+
+    Section("CLOUDS", nullptr);
+    if (Toggle("Clouds", &SK.clouds, "Show or hide the clouds (SetCloudsEnabled)."))
+        StartEvent(SK.clouds ? "Clouds on" : "Clouds off", "", "SetCloudsEnabled",
+                   {{"enableClouds", SK.clouds ? "true" : "false", ""}});
+    ImGui::TextUnformatted("Cloud drift speed");
+    if (int r = Slider("cloudscroll", &SK.cloudScroll, 0.f, 50.f, 0.f, "%.1f"))
+        StartEvent("Cloud drift " + Num(SK.cloudScroll), "", "InfiniteScrollClouds",
+                   {{"scrollSpeed", Num(r == 2 ? 0.f : SK.cloudScroll), ""}});
+    if (ImGui::Button("Cloud texture swirl: fast")) StartEvent("Cloud swirl fast", "", "CloudNoiseVelocity",
+                                                                {{"noiseScrollVelocity", "{60, 0, 0}", ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Normal##swirl")) StartEvent("Cloud swirl normal", "", "CloudNoiseVelocity",
+                                                   {{"noiseScrollVelocity", "{10, 0, 0}", ""}});
+
+    Section("WEATHER", nullptr);
+    ImGui::TextUnformatted("Rain (fall rate / intensity / gusts)");
+    bool rain = false;
+    rain |= Slider("rainrate", &SK.rainRate, 0.f, 20.f, 4.f, "fall %.1f") != 0;
+    rain |= Slider("rainint", &SK.rainIntensity, 0.f, 5.f, 1.f, "intensity %.2f") != 0;
+    rain |= Slider("rainosc", &SK.rainOsc, 0.f, 2.f, 0.5f, "gusts %.2f") != 0;
+    if (rain)
+        StartEvent("Rain settings", "", "SetRainParams",
+                   {{"fallRate", Num(SK.rainRate), ""}, {"intensity", Num(SK.rainIntensity), ""},
+                    {"oscillationAmount", Num(SK.rainOsc), ""}, {"transitionDuration", "1.0", ""},
+                    {"harmful", "false", ""}});
+    Dim("Rain only shows where the level has rain; it never drains your light from here (harmful off).");
+    ImGui::TextUnformatted("Wind strength");
+    if (int r = Slider("windint", &SK.wind, 0.f, 30.f, 5.f, "%.1f"))
+        StartEvent(r == 2 ? "Wind back to normal" : "Wind " + Num(SK.wind), "", "SetWindIntensity",
+                   {{"intensity", Num(SK.wind), ""}, {"reset", r == 2 ? "true" : "false", ""}});
+    ImGui::TextUnformatted("Wind push (force / direction)");
+    bool push = Slider("windforce", &SK.push, 0.f, 50.f, 0.f, "force %.1f") != 0;
+    push |= Slider("winddir", &SK.pushDir, 0.f, 360.f, 0.f, "%.0f deg") != 0;
+    if (push) {
+        float rad = SK.pushDir * 3.14159265f / 180.f;
+        char v[96];
+        snprintf(v, sizeof v, "{%.3f, 0, %.3f}", sinf(rad), cosf(rad));
+        StartEvent("Wind push " + Num(SK.push), "", "SetWind", {{"windForce", Num(SK.push), ""}, {"windDir", v, ""}});
+    }
 }
 
 void WorldSection() {
@@ -2575,7 +2678,7 @@ void FeaturesTab() {
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
-                                  "Camera", "World",  "Teleport",  "Social",  "Shout"};
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Sky"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
     bool collapsed = FeaturesTabsCollapsed();
@@ -2628,6 +2731,7 @@ void FeaturesTab() {
             case 8: TeleportSection(); break;
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
+            case 11: SkySection(); break;
         }
     }
     TouchScroll();
