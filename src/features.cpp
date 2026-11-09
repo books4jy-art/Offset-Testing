@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "AvatarGrindToPos", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -2153,7 +2153,38 @@ const CodePatch kStrangerPatches[1] = {
 // (0.16.4: the second patch, 0x1D94810 "base ability bought with this friend", made every upgraded ability show
 // next to its base: emotes appeared twice. Dropped; TSM doesn't patch it either.)
 
+// Notes (0.19.0): the game's note menus (OpenNoteMenu, OpenNextVisualNoteMenu, RefreshNotesMenu,
+// ClearSharedSpaceShrineLocalNote: events with no settings) and the message items through TriggerToyEvent
+// (consumableName, the same path the message spells take). The *Note types on the Music & sound page are saved note
+// records, not events, so they can't be fired.
+void NotesSection() {
+    Section("NOTES & MESSAGES", "The game's own note menus and message items. Notes you write are posted the "
+                                "game's normal way.");
+    struct Btn { const char* label; const char* type; };
+    static const Btn kMenus[] = {{"Notes menu", "OpenNoteMenu"}, {"Next note", "OpenNextVisualNoteMenu"},
+                                 {"Refresh notes", "RefreshNotesMenu"},
+                                 {"Clear shrine note (local)", "ClearSharedSpaceShrineLocalNote"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kMenus); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kMenus[i].label, ImVec2(Px(250), 0))) StartEvent(kMenus[i].label, "", kMenus[i].type, {});
+    }
+    ImGui::TextUnformatted("Place a message item");
+    static const char* kItems[][2] = {{"Boat", "message_boat"},       {"Stone", "message_stone"},
+                                      {"Lantern", "message_lantern"}, {"Crane", "message_crane"},
+                                      {"Gondola", "message_gondola"}, {"Rose", "message_rose"},
+                                      {"Treasure", "message_treasure"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kItems); i++) {
+        if (i % 3) ImGui::SameLine();
+        if (ImGui::Button(kItems[i][0], ImVec2(Px(165), 0)))
+            StartEvent(std::string("Message ") + kItems[i][0], "", "TriggerToyEvent",
+                       {{"consumableName", Quote(kItems[i][1]), ""}, {"persistent", "false", ""}});
+    }
+    Dim("Uses TriggerToyEvent, the path the message spells take; whether the game also uses up a spell is up to the "
+        "game.");
+}
+
 void SocialSection() {
+    NotesSection();
     Section("SOCIAL", nullptr);
     ImGui::TextUnformatted("Speak to all");
     Dim("Says this over your avatar, like the developers' interview messages (AvatarSpeak). Experimental: who else "
