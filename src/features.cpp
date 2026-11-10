@@ -1550,11 +1550,25 @@ void PropsSection() {
     // events) started without errors but showed nothing.
     Section("TOYS & PROPS", "Every toy, placeable and prop in the game's consumable list (tables, swings, tea sets, "
                             "bonfires, beach balls, balloon hats, props...), taken out the way their spells do.");
-    LoadDefs("Data/Resources/ConsumableDefs.json", "consumables", gPlaceables, gPlaceablesTried);
+    // ConsumableDefs isn't a game file (the game gets it from the server at login), so the ids are the game's own
+    // consumable ids (its consumable_name_* text keys): toys, placeables, props and message items.
     if (gPlaceables.empty()) {
-        Dim("The consumable list couldn't be read from the game yet.");
-        if (ImGui::Button("Try again##pl")) gPlaceablesTried = false;
-        return;
+        static const char* kToys[] = {
+            "beachball", "birthdaycake_small", "birthdaycake_medium", "birthdaycake_large", "bonfire", "pinwheel",
+            "seesaw", "swing", "table", "tablexmas", "teaset", "placeablerace_generic", "skyballgoals_casualwood",
+            "sharedspace_candle", "memory_candle", "figurineskykid_normaledition", "message_boat", "message_crane",
+            "message_gondola", "message_lantern", "message_rose", "message_stone", "message_treasure",
+            "firework_crab", "firework_jelly", "firework_manta", "fireworks", "dark_dragon_firework",
+            "outfit_prop_birthdaycake_giant", "outfit_prop_bluebird_swing", "outfit_prop_cannon_pin",
+            "outfit_hat_ballooncrab", "outfit_hat_ballooncrown", "outfit_hat_balloonjellyfish",
+            "outfit_hat_balloonkrill", "outfit_hat_balloonmanta", "outfit_horn_ballooncrab",
+            "outfit_horn_ballooncrown", "outfit_horn_balloonjellyfish", "outfit_horn_balloonkrill",
+            "outfit_horn_balloonmanta", "outfit_face", "outfit_wing_none", "butterfly_pastel", "bloom_sakura",
+            "bloom_rose_trail", "shout_crab", "shout_jelly", "shout_manta", "shout_aurora_keychain",
+            "shout_manatee_keychain", "shout_kizunaaicn", "potion_growth_huge", "potion_growth_tiny",
+            "potion_growth_keychain", "potion_recharge_thermo", "resize_potion", "rainbow", "rainbow_handhold",
+            "color_collector", "star_protector", "repellant_krill", "birthdayhat_krill", "peewee"};
+        for (const char* t : kToys) gPlaceables.push_back({t, "", "", 1});
     }
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##plf", "search", gPlaceFilter, sizeof gPlaceFilter);
