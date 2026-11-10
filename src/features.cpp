@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "AvatarGrindToPos", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -1637,6 +1637,33 @@ void ReflectionSection() {
     if (Slider("rfh", &RF.height, -50.f, 50.f, 0.f, "%.1f") && RF.on) apply();
 }
 
+// Menus (0.23.0): the game's menu events that take no settings (from the game type list), one tap each.
+void MenusSection() {
+    Section("GAME MENUS", "Opens the game's own menus.");
+    struct Btn { const char* label; const char* type; };
+    static const Btn kMenus[] = {
+        {"Audio settings", "AudioSettingsMenu"},     {"Controls", "ControlSettingsMenu"},
+        {"Graphics", "GraphicsSettingsMenu"},        {"Quests", "OpenQuestMenu"},
+        {"Season pass", "OpenSeasonPassCommerceMenu"}, {"Report", "ReportMenu"},
+        {"Photo op", "ShowPhotoOpUI"},               {"Social menu", "SocialOpenMenu"},
+        {"Close social menu", "SocialCloseMenu"},    {"Dark horn", "SocialDarkHornMenu"},
+        {"Grappling hook", "SocialGrapplingHookMenu"}, {"Recorder", "SocialRecorderMenu"},
+        {"Notes", "OpenNoteMenu"},                   {"Next note", "OpenNextVisualNoteMenu"},
+        {"Dye crafting", "OpenCraftingMenu"},
+    };
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kMenus); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kMenus[i].label, ImVec2(Px(250), 0))) {
+            if (!strcmp(kMenus[i].type, "OpenCraftingMenu"))
+                Run("Dye crafting", "if type(OpenCraftingMenu) ~= \"function\" then error(\"OpenCraftingMenu isn't in this "
+                                    "build\") end\nOpenCraftingMenu(game)\n", "menu:craft");
+            else
+                StartEvent(std::string(kMenus[i].label) + " menu", "", kMenus[i].type, {});
+        }
+    }
+    Dim("The season pass and dye menus are the real ones: buying or dyeing there is real.");
+}
+
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
     if (Toggle("No collision", &F.noCollision,
@@ -2934,7 +2961,7 @@ void FeaturesTab() {
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
-                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn", "Music"};
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn", "Music", "Menus", "All events"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
     bool collapsed = FeaturesTabsCollapsed();
@@ -2989,7 +3016,9 @@ void FeaturesTab() {
             case 10: ShoutSection(); break;
             case 11: SkySection(); break;
             case 12: SpawnTab(); CreatureControlsSection(); break;
-            case 13: MusicSection(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
+            case 13: MusicSection(); break;
+            case 14: MenusSection(); break;
+            case 15: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
     TouchScroll();

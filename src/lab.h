@@ -144,7 +144,8 @@ bool LocalAvatarPos(float out[3], float* yaw = nullptr);  // teleport.cpp: your 
 bool HoldAvatarAt(const float pos[3]);  // teleport.cpp: AvatarSetPos to pos, quietly (queue key "freeze")
 std::string CurrentLevelId();  // teleport.cpp: the current level id ("" if unreadable)
 void OtherOffsetsTab();  // features.cpp: TheVoid's offsets that no feature uses yet
-void OpenMemoryAt(uint32_t offset);  // ui.cpp: show an offset in the Memory tab
+void OpenMemoryAt(uint32_t offset);
+void AllEventsTab();  // ui.cpp: every game event with its own controls (the Game functions tab)  // ui.cpp: show an offset in the Memory tab
 float Px(float v);
 float Dp(float v);    // ui.cpp: TSM's dp (1.6667 px x the panel scale)    // ui.cpp: a size in the layout's base pixels, scaled for the screen and the Size slider
 void TouchScroll();   // ui.cpp: call inside a scrolling window/child: drag the content to scroll

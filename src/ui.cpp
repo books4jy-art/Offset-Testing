@@ -1388,6 +1388,7 @@ void LogTab() {
 }  // namespace
 
 void OpenMemoryAt(uint32_t offset) { OpenMemory(offset); }
+void AllEventsTab() { GameFunctionsTab(); }  // the Game functions tab, shown as a Features sub-tab
 
 float Dp(float v) { return DP(v); }
 
