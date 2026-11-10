@@ -1050,6 +1050,30 @@ void TransformSection() {
     ImGui::EndDisabled();
 }
 
+// 0.24.0: outfits (props included) are worn through the game's own Lua function OutfitSelectSetOutfit(game, id), as
+// TSM does. The id: the def name without "CharSkyKid_"; other defs become "<Type>_<last part of the name>".
+void WearOutfit(const std::string& name, const std::string& type) {
+    std::string id;
+    const std::string kPrefix = "CharSkyKid_";
+    if (name.rfind(kPrefix, 0) == 0) {
+        id = name.substr(kPrefix.size());
+    } else {
+        size_t u = name.find_last_of('_');
+        std::string t = type;
+        if (!t.empty()) t[0] = (char)toupper((unsigned char)t[0]);
+        id = t + "_" + (u == std::string::npos ? name : name.substr(u + 1));
+    }
+    for (char c : id)
+        if (!(isalnum((unsigned char)c) || c == '_')) {
+            Log("Outfit: %s has an unusual name; not sent", name.c_str());
+            return;
+        }
+    Run("Outfit: " + id,
+        "if type(OutfitSelectSetOutfit) ~= \"function\" then error(\"OutfitSelectSetOutfit isn't in this build\") end\n"
+        "OutfitSelectSetOutfit(game, \"" + id + "\")\n",
+        "outfit:" + type);
+}
+
 void OutfitsSection() {
     LoadDefs("Data/Resources/OutfitDefs.json", "outfits", M.outfits, M.outfitTried);
     Section("CHANGE OUTFITS", "Wears an outfit on your avatar (AvatarSetOutfit; local). The list is the game's own "
@@ -1112,8 +1136,7 @@ void OutfitsSection() {
                 const std::string& name = d.name;
                 std::string label = name.rfind("CharSkyKid_", 0) == 0 ? name.substr(11) : name;
                 if (IconRow(d.icon, label, name.c_str()))
-                    StartEvent("Outfit: " + name, "outfit_" + M.outfitType, "AvatarSetOutfit",
-                               {{M.outfitType, Quote(name), ""}});
+                    WearOutfit(name, M.outfitType);
             }
     }
     TouchScroll();
