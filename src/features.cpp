@@ -1598,6 +1598,54 @@ void PropsSection() {
     ImGui::EndChild();
 }
 
+// 0.23.3: the game's placeable list again (PlaceableDefs.json: unit shapes, props, furniture...), placed with
+// PlacePlaceablePickup. "Visible to others" sends it the game's normal networked way (preventNetworking off); the
+// level server can still refuse it (a "LevelServer revoke request" in the log).
+std::vector<DefItem> gUnitDefs;
+bool gUnitTried = false, gUnitNetworked = false, gUnitExact = false;
+char gUnitFilter[64] = "unit";
+std::vector<int> gUnitRows;
+std::string gUnitRowsFor = "\x01";
+
+void PlaceablesSection() {
+    Section("PLACEABLES", "The game's placeable list (unit cube, cylinder and other shapes, furniture...).");
+    LoadDefs("Data/Resources/PlaceableDefs.json", "placeables", gUnitDefs, gUnitTried);
+    if (gUnitDefs.empty()) {
+        Dim("The placeable list couldn't be read from the game yet.");
+        if (ImGui::Button("Try again##ud")) gUnitTried = false;
+        return;
+    }
+    ImGui::Checkbox("Visible to others", &gUnitNetworked);
+    ImGui::SameLine();
+    ImGui::Checkbox("Exact position", &gUnitExact);
+    Dim(gUnitNetworked ? "Sent the game's normal networked way; your server decides whether it stays."
+                       : "Only on your screen (preventNetworking).");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##udf", "search", gUnitFilter, sizeof gUnitFilter);
+    std::string q = Lower(gUnitFilter);
+    if (q != gUnitRowsFor) {
+        gUnitRowsFor = q;
+        gUnitRows.clear();
+        for (int i = 0; i < (int)gUnitDefs.size(); i++)
+            if (q.empty() || Lower(gUnitDefs[i].name).find(q) != std::string::npos) gUnitRows.push_back(i);
+    }
+    Dim("%zu placeables", gUnitRows.size());
+    if (ImGui::BeginChild("##unitdefs", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 8.5f), ImGuiChildFlags_Border)) {
+        ImGuiListClipper clip;
+        clip.Begin((int)gUnitRows.size());
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                const DefItem& d = gUnitDefs[gUnitRows[i]];
+                if (IconRow(d.icon, d.name, d.name.c_str()))
+                    StartEvent("Placeable " + d.name + (gUnitNetworked ? " (networked)" : ""), "", "PlacePlaceablePickup",
+                               {{"defName", Quote(d.name), ""}, {"preventNetworking", gUnitNetworked ? "false" : "true", ""},
+                                {"useExactTransform", gUnitExact ? "true" : "false", ""}});
+            }
+    }
+    TouchScroll();
+    ImGui::EndChild();
+}
+
 struct CreatureState { bool krillAsleep = false; float spacing = 1.f, scale = 0.15f, anim = 1.f; } CR;
 
 void CreatureControlsSection() {
@@ -3010,7 +3058,7 @@ void FeaturesTab() {
             case 1: EnergySection(); break;
             case 2: TransformSection(); ModesSection(); break;
             case 3: OutfitsSection(); break;
-            case 4: ItemsSection(); PropsSection(); EffectsSection(); break;
+            case 4: ItemsSection(); PropsSection(); PlaceablesSection(); EffectsSection(); break;
             case 5: EmotesSection(); break;
             case 6: CameraSection(); break;
             case 7: WorldSection(); break;
