@@ -292,7 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
-        "SetCameraShake", "AvatarGrindToPos", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
+        "SetCameraShake", "AvatarGrindToPos", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
         "AvatarSetOutfitDye", "AvatarSpeak", "AvatarChargeEnergy", "AvatarSetInnerGlow", "LocalDoAudienceReact",
@@ -1540,6 +1540,101 @@ void MusicSection() {
     ImGui::SameLine();
     if (ImGui::Button("Apple Music menu", ImVec2(Px(250), 0))) StartEvent("Apple Music menu", "", "OpenAppleMusicMenu", {});
     CustomSongsSection();
+}
+
+// 0.22.0: props, creature controls and reflection from the Spirits/NPCs and Props/toys pages.
+std::vector<DefItem> gPlaceables;
+bool gPlaceablesTried = false;
+char gPlaceFilter[64] = "";
+std::vector<int> gPlaceRows;
+std::string gPlaceRowsFor = "\x01";
+
+void PropsSection() {
+    Section("PROPS", "Hold props and place placeables, the game's own events. Placeables are made with "
+                     "preventNetworking, so only you see them.");
+    struct Btn { const char* label; const char* type; };
+    static const Btn kHold[] = {{"Shepherd staff", "AP27ShepherdStaff"}, {"Shield", "AP27Shield"},
+                                {"Spear", "AP27Spear"},                  {"Manatee figurine", "AP27ManateeFigurine"},
+                                {"Enable player prop", "EnablePlayerProp"}, {"Wear tea set", "WearTeaSet"},
+                                {"Tea table action", "TeaTableAction"},     {"Trampoline", "ProtoTrampoline"},
+                                {"Prop animation", "PropSimpleAnim"},       {"Placeable action", "PlaceableAction"},
+                                {"Plushie toss game", "PlacePlushieTossPlaceable"}, {"Puzzle key", "PlacePuzzleKey"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kHold); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kHold[i].label, ImVec2(Px(250), 0))) StartEvent(kHold[i].label, "", kHold[i].type, {});
+    }
+    ImGui::TextUnformatted("Place a placeable (only you see it)");
+    LoadDefs("Data/Resources/PlaceableDefs.json", "placeables", gPlaceables, gPlaceablesTried);
+    if (gPlaceables.empty()) {
+        Dim("The placeable list couldn't be read from the game yet.");
+        if (ImGui::Button("Try again##pl")) gPlaceablesTried = false;
+        return;
+    }
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##plf", "search", gPlaceFilter, sizeof gPlaceFilter);
+    std::string q = Lower(gPlaceFilter);
+    if (q != gPlaceRowsFor) {
+        gPlaceRowsFor = q;
+        gPlaceRows.clear();
+        for (int i = 0; i < (int)gPlaceables.size(); i++)
+            if (q.empty() || Lower(gPlaceables[i].name).find(q) != std::string::npos) gPlaceRows.push_back(i);
+    }
+    if (ImGui::BeginChild("##placeables", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 8.5f), ImGuiChildFlags_Border)) {
+        ImGuiListClipper clip;
+        clip.Begin((int)gPlaceRows.size());
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+                const DefItem& d = gPlaceables[gPlaceRows[i]];
+                if (IconRow(d.icon, d.name, d.name.c_str()))
+                    StartEvent("Placeable " + d.name, "", "PlacePlaceablePickup",
+                               {{"defName", Quote(d.name), ""}, {"preventNetworking", "true", ""},
+                                {"useExactTransform", "false", ""}});
+            }
+    }
+    TouchScroll();
+    ImGui::EndChild();
+}
+
+struct CreatureState { bool krillAsleep = false; float spacing = 1.f, scale = 0.15f, anim = 1.f; } CR;
+
+void CreatureControlsSection() {
+    Section("CREATURE CONTROLS", "The game's own creature events for the level you're in.");
+    if (Toggle("Krill asleep", &CR.krillAsleep, "Puts every dark creature in the level to sleep (AwakenDarkCreatures "
+                                                "awake off); off wakes them again."))
+        StartEvent(CR.krillAsleep ? "Krill asleep" : "Krill awake", "", "AwakenDarkCreatures",
+                   {{"awake", CR.krillAsleep ? "false" : "true", ""}, {"fireOnce", "true", ""}});
+    struct Btn { const char* label; const char* type; };
+    static const Btn kBtn[] = {{"Dark horn blast", "DarkHornBlast"}, {"Release birds", "ReleaseBirds"},
+                               {"Flip crabs upright", "Crab_Straighten"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kBtn); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kBtn[i].label, ImVec2(Px(250), 0))) StartEvent(kBtn[i].label, "", kBtn[i].type, {});
+    }
+    ImGui::TextUnformatted("Bird flocks: spacing / size / animation speed");
+    bool f = Slider("bfsp", &CR.spacing, 0.f, 10.f, 1.f, "spacing %.2f") != 0;
+    f |= Slider("bfsc", &CR.scale, 0.05f, 2.f, 0.15f, "size %.2f") != 0;
+    f |= Slider("bfan", &CR.anim, 0.1f, 4.f, 1.f, "anim %.2f") != 0;
+    if (f)
+        StartEvent("Bird flock look", "", "BirdFlockOverrides",
+                   {{"fishSchoolType", "\"kFishSchoolType_Bird\"", "2"}, {"minSpacing", "0", ""},
+                    {"maxSpacing", Num(CR.spacing), ""}, {"minScale", Num(CR.scale), ""},
+                    {"maxScale", Num(CR.scale), ""}, {"animationSpeedMultiplier", Num(CR.anim), ""}});
+}
+
+struct ReflectState { bool on = false; float height = 0.f; } RF;
+
+void ReflectionSection() {
+    Section("REFLECTION", "The game's mirror-floor reflection of your avatar (Npc_SetReflected / Npc_Reflect with "
+                          "apply to local). Off: not reflected.");
+    auto apply = [] {
+        StartEvent(RF.on ? "Reflection on" : "Reflection off", "", "Npc_SetReflected",
+                   {{"applyToLocal", "true", ""}, {"reflected", RF.on ? "true" : "false", ""}});
+        if (RF.on)
+            StartEvent("", "", "Npc_Reflect", {{"applyToLocal", "true", ""}, {"reflectionPlaneHeight", Num(RF.height * 2.f), ""}});
+    };
+    if (ImGui::Checkbox("Reflection", &RF.on)) apply();
+    ImGui::TextUnformatted("Mirror height");
+    if (Slider("rfh", &RF.height, -50.f, 50.f, 0.f, "%.1f") && RF.on) apply();
 }
 
 void WorldSection() {
@@ -2876,11 +2971,11 @@ void FeaturesTab() {
     ImGui::Separator();
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
         switch (gSub) {
-            case 0: PlayerSection(inWorld); break;
+            case 0: PlayerSection(inWorld); ReflectionSection(); break;
             case 1: EnergySection(); break;
             case 2: TransformSection(); ModesSection(); break;
             case 3: OutfitsSection(); break;
-            case 4: ItemsSection(); EffectsSection(); break;
+            case 4: ItemsSection(); PropsSection(); EffectsSection(); break;
             case 5: EmotesSection(); break;
             case 6: CameraSection(); break;
             case 7: WorldSection(); break;
@@ -2888,7 +2983,7 @@ void FeaturesTab() {
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
             case 11: SkySection(); break;
-            case 12: SpawnTab(); break;
+            case 12: SpawnTab(); CreatureControlsSection(); break;
             case 13: MusicSection(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
