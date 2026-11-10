@@ -1110,8 +1110,9 @@ void WearOutfit(const std::string& name, const std::string& type) {
 
 void OutfitsSection() {
     LoadDefs("Data/Resources/OutfitDefs.json", "outfits", M.outfits, M.outfitTried);
-    Section("CHANGE OUTFITS", "Wears an outfit on your avatar (AvatarSetOutfit; local). The list is the game's own "
-                              "outfit file, NPC outfits included when switched on.");
+    Section("CHANGE OUTFITS", "Wears an outfit through the game's closet call (OutfitSelectSetOutfit), as TSM does, so "
+                              "it may be saved and seen like a closet change. The list is the game's own outfit file, "
+                              "NPC outfits included when switched on.");
     if (M.outfits.empty()) {
         Dim("The outfit list couldn't be read from the game yet (enter the world and open this again).");
         if (ImGui::Button("Try again")) M.outfitTried = false, M.outfitTypes.clear();
@@ -1189,7 +1190,8 @@ void OutfitsSection() {
             ImGui::RadioButton(kPropMethods[i], &gPropMethod, i);
         if (ImGui::Button("Hold prop now", ImVec2(Px(250), 0))) StartEvent("Hold prop", "", "EnablePlayerProp", {});
         Dim("Props didn't show with the closet call in the last test: try each way and send the log, so the one that "
-            "works can become the only one.");
+            "works can become the only one. Closet + hold prop asks to hold it straight after the closet call; if the "
+            "prop isn't there yet, tap Hold prop now.");
     }
 
     Section("EDIT OUTFITS", "Your avatar's height and size (TheVoid's height/scale values; the game holds them to "
@@ -1666,7 +1668,7 @@ bool SpellId(const std::string& id) {
 }
 
 // Readies the spells in one script: the Lua queue keeps one waiting script per key, so separate requests made in the
-// same moment would replace each other and only the last spell would be readied.
+// same moment under one key would replace each other and only the last spell would be readied.
 void ReadySpells(const std::vector<std::string>& ids) {
     std::string lua;
     std::vector<std::string> ok;
@@ -1682,7 +1684,9 @@ void ReadySpells(const std::vector<std::string>& ids) {
     std::string what = ok.size() == 1 ? "Spell ready: " + ok[0]
                                       : std::to_string(ok.size()) + " spells ready";
     if (Run(what + " (cast any spell to use " + (ok.size() == 1 ? "it" : "them") + ")", kPrelude + lua,
-            "once:TriggerToyEvent"))
+            // own key per single spell and for the selection: one shared key let a quick second tap (or a message item
+            // from Social, which uses the plain TriggerToyEvent key) replace a spell still waiting in the queue
+            ok.size() == 1 ? "spell:" + ok[0] : std::string("spells:selected")))
         SP.last = ok.size() == 1 ? ok[0] : std::to_string(ok.size()) + " spells";
 }
 
