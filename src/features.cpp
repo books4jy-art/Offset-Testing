@@ -1647,17 +1647,56 @@ const std::vector<SpellGroup>& SpellGroups() {
     return kGroups;
 }
 
-struct SpellsState { int group = 0; bool keep = false; char filter[64] = "", custom[64] = ""; std::string last; } SP;
+struct SpellsState {
+    int group = 0;
+    bool keep = false, readyOnTap = false;
+    char filter[64] = "", custom[64] = "";
+    std::string last;
+    std::vector<std::string> selected;  // 0.29.0: spells picked to be readied together
+} SP;
+constexpr size_t kMaxSelected = 24;
 
-void ReadySpell(const std::string& id) {
+bool SpellId(const std::string& id) {
     for (char c : id)
         if (!(isalnum((unsigned char)c) || c == '_')) {
             Log("Spells: \"%s\" isn't a spell id (letters, digits and _ only)", id.c_str());
-            return;
+            return false;
         }
-    if (StartEvent("Spell ready: " + id + " (cast any spell to use it)", "", "TriggerToyEvent",
-                   {{"consumableName", Quote(id), ""}, {"persistent", SP.keep ? "true" : "false", ""}}))
-        SP.last = id;
+    return !id.empty();
+}
+
+// Readies the spells in one script: the Lua queue keeps one waiting script per key, so separate requests made in the
+// same moment would replace each other and only the last spell would be readied.
+void ReadySpells(const std::vector<std::string>& ids) {
+    std::string lua;
+    std::vector<std::string> ok;
+    for (const auto& id : ids) {
+        if (!SpellId(id)) continue;
+        std::string ev = EventLua("", "TriggerToyEvent",
+                                  {{"consumableName", Quote(id), ""}, {"persistent", SP.keep ? "true" : "false", ""}});
+        if (ev.empty()) return;  // TriggerToyEvent isn't usable (logged)
+        lua += ev;
+        ok.push_back(id);
+    }
+    if (ok.empty()) return;
+    std::string what = ok.size() == 1 ? "Spell ready: " + ok[0]
+                                      : std::to_string(ok.size()) + " spells ready";
+    if (Run(what + " (cast any spell to use " + (ok.size() == 1 ? "it" : "them") + ")", kPrelude + lua,
+            "once:TriggerToyEvent"))
+        SP.last = ok.size() == 1 ? ok[0] : std::to_string(ok.size()) + " spells";
+}
+
+void ReadySpell(const std::string& id) { ReadySpells({id}); }
+
+bool IsSelected(const std::string& id) {
+    return std::find(SP.selected.begin(), SP.selected.end(), id) != SP.selected.end();
+}
+
+void ToggleSelected(const std::string& id) {
+    auto it = std::find(SP.selected.begin(), SP.selected.end(), id);
+    if (it != SP.selected.end()) SP.selected.erase(it);
+    else if (SP.selected.size() >= kMaxSelected) Log("Spells: up to %zu can be selected", kMaxSelected);
+    else if (SpellId(id)) SP.selected.push_back(id);
 }
 
 std::string ConsumableLabel(const char* id) {
@@ -1669,13 +1708,46 @@ std::string ConsumableLabel(const char* id) {
     return s;
 }
 
+void SelectedSpellsSection() {
+    Section("SELECTED SPELLS", "Pick several spells below, ready them together, then cast any spell you have: "
+                               "they all play on that cast.");
+    if (SP.selected.empty()) {
+        Dim("Nothing selected yet: tap spells in the list to add them.");
+        return;
+    }
+    float cw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    int remove = -1;
+    for (int i = 0; i < (int)SP.selected.size(); i++) {
+        ImGui::PushID(i);
+        if (i % 2) ImGui::SameLine();
+        std::string label = "x  " + ConsumableLabel(SP.selected[i].c_str()) + "###chip";
+        if (ImGui::Button(label.c_str(), ImVec2(cw, 0))) remove = i;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s (tap to remove)", SP.selected[i].c_str());
+        ImGui::PopID();
+    }
+    if (remove >= 0) SP.selected.erase(SP.selected.begin() + remove);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+    char ready[48];
+    snprintf(ready, sizeof ready, "Ready %zu selected###ready", SP.selected.size());
+    if (ImGui::Button(ready, ImVec2(cw, Dp(44)))) ReadySpells(SP.selected);
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    if (ImGui::Button("Clear selection", ImVec2(cw, Dp(44)))) SP.selected.clear();
+    Dim("The selection stays after readying, so the same set can be readied again.");
+}
+
 void SpellsTab() {
-    Section("SPELLS", "Tap a spell to ready it (the shop's preview path, TriggerToyEvent), then cast any spell you "
-                      "have: the readied one plays instead. More than one can be readied before a cast.");
+    Section("SPELLS", "The shop's preview path (TriggerToyEvent): a readied spell plays when you cast any spell you "
+                      "have.");
     ImGui::Checkbox("Keep ready after a cast", &SP.keep);
     Dim(SP.keep ? "Readied spells stay ready (the game's persistent switch) until you change level."
-                : "A readied spell is used by your next cast.");
+                : "Readied spells are used by your next cast.");
+    ImGui::Checkbox("Ready on tap (skip the selection)", &SP.readyOnTap);
     if (!SP.last.empty()) ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.f, 1.f), "Last readied: %s", SP.last.c_str());
+    if (!SP.readyOnTap) SelectedSpellsSection();
+    ImGui::Spacing();
+    ImGui::SeparatorText("ALL SPELLS");
+    Dim(SP.readyOnTap ? "Tap a spell to ready it now." : "Tap a spell to select it; tap again to unselect.");
     const auto& groups = SpellGroups();
     float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
     for (int i = 0; i < (int)groups.size(); i++) {
@@ -1698,7 +1770,14 @@ void SpellsTab() {
         for (int i = 0; i < (int)rows.size(); i++) {
             ImGui::PushID(rows[i]);
             if (i % 2) ImGui::SameLine();
-            if (ImGui::Button(ConsumableLabel(rows[i]).c_str(), ImVec2(cw, Dp(44)))) ReadySpell(rows[i]);
+            bool picked = !SP.readyOnTap && IsSelected(rows[i]);
+            if (picked) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+            std::string label = (picked ? "+ " : "") + ConsumableLabel(rows[i]) + "###pick";
+            if (ImGui::Button(label.c_str(), ImVec2(cw, Dp(44)))) {
+                if (SP.readyOnTap) ReadySpell(rows[i]);
+                else ToggleSelected(rows[i]);
+            }
+            if (picked) ImGui::PopStyleColor();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", rows[i]);
             ImGui::PopID();
         }
@@ -1709,7 +1788,10 @@ void SpellsTab() {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(200));
     ImGui::InputTextWithHint("##spc", "e.g. message_boat", SP.custom, sizeof SP.custom);
     ImGui::SameLine();
-    if (ImGui::Button("Ready##spc", ImVec2(-1, 0)) && SP.custom[0]) ReadySpell(Lower(SP.custom));
+    if (ImGui::Button(SP.readyOnTap ? "Ready##spc" : "Select##spc", ImVec2(-1, 0)) && SP.custom[0]) {
+        if (SP.readyOnTap) ReadySpell(Lower(SP.custom));
+        else if (!IsSelected(Lower(SP.custom))) ToggleSelected(Lower(SP.custom));
+    }
 }
 
 // 0.23.3: the game's placeable list again (PlaceableDefs.json: unit shapes, props, furniture...), placed with
