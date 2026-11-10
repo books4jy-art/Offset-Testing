@@ -1747,6 +1747,91 @@ void MenusSection() {
     Dim("The season pass and dye menus are the real ones: buying or dyeing there is real.");
 }
 
+// 0.25.0: the game's own switches and values (0.35.2 addresses from the port; defaults read from the game file).
+// "Enable" switches default to 1 (hiding writes 0); the rest default to 0. Every write checks the byte holds 0 or 1.
+struct GameSwitch { const char* label; uint32_t at; uint8_t normal; const char* help; bool on; };
+GameSwitch gWorldSw[] = {
+    {"Hide clouds", 0x2F5F2C8, 1, "", false},          {"Hide water", 0x2FC862C, 1, "", false},
+    {"Hide ocean", 0x2FC8630, 1, "", false},           {"Hide sun", 0x3169CF6, 0, "", false},
+    {"Hide avatars", 0x3169CF0, 0, "", false},         {"Hide objects", 0x3169CF1, 0, "", false},
+    {"Hide object edges (skirts)", 0x3169CF2, 0, "", false}, {"Hide models", 0x3169CF3, 0, "", false},
+    {"Disable lights", 0x33EDB5C, 0, "", false},       {"Hide game UI", 0x3169CF8, 0, "For clean screenshots.", false},
+    {"Disable gates", 0x316CA34, 0, "Gates and doors don't block you.", false},
+    {"Disable level-change events", 0x315D0C0, 0, "", false},
+    {"Camera snap off", 0x300B89C, 1, "The camera doesn't snap back behind you.", false},
+};
+GameSwitch gRadarSw[] = {
+    {"Show spirit locations", 0x3155250, 0, "", false}, {"Shrine radar", 0x34D54D0, 0, "", false},
+    {"Map shrine radar", 0x34D5500, 0, "", false},      {"All NPCs on radar", 0x312F4BA, 0, "", false},
+    {"Friend radar", 0x33AEEB8, 0, "", false},          {"Collected wing lights on radar", 0x3511690, 0, "", false},
+    {"Show all feedback", 0x34D54D4, 0, "", false},     {"Fragment auto-warp", 0x3178CA4, 0, "", false},
+    {"Hide HUD except star fragments", 0x347BE14, 0, "", false},
+};
+GameSwitch gFunSw[] = {
+    {"Rainbow glow", 0x3450C88, 0, "", false},          {"Fast candle burn", 0x317658C, 0, "", false},
+    {"Tame dark creatures", 0x3175224, 0, "", false},
+};
+GameSwitch gDebugSw[] = {
+    {"Pause UI animations", 0x34A6B24, 0, "", false},   {"Show UI hierarchy", 0x34A6B2C, 0, "", false},
+    {"TV debug UI", 0x309F510, 0, "", false},           {"Dye debug", 0x31850E0, 0, "", false},
+};
+
+bool SetByte(const char* what, uint32_t at, uint8_t v) {
+    uint8_t cur = 0xFF;
+    if (!GameBase() || !ReadMemory(GameBase() + at, &cur, 1) || cur > 1) {
+        Log("%s: the switch at 0x%X doesn't look right (%u); not changed", what, at, cur);
+        return false;
+    }
+    bool ok = WriteGameMemory(at, &v, 1);
+    Log("%s %s%s", what, v ? "1" : "0", ok ? "" : " (write failed)");
+    return ok;
+}
+
+void SwitchList(GameSwitch* list, int n) {
+    for (int i = 0; i < n; i++) {
+        GameSwitch& g = list[i];
+        ImGui::PushID(g.label);
+        if (Toggle(g.label, &g.on, g.help))
+            if (!SetByte(g.label, g.at, g.on ? (uint8_t)!g.normal : g.normal)) g.on = !g.on;
+        ImGui::PopID();
+    }
+}
+
+struct FloatVar { const char* label; uint32_t at; float lo, hi, def; float v; };
+FloatVar gFloats[] = {{"Flower height", 0x2FA9E28, 0.f, 5.f, 1.f, 1.f},
+                      {"Flower size", 0x2FA9E2C, 0.f, 5.f, 1.f, 1.f},
+                      {"Candle flame size", 0x2F5D04C, 0.f, 20.f, 2.2f, 2.2f}};
+bool gFakeCape = false;
+float gFakeCapeLevel = 1.f;
+
+void SwitchesSection() {
+    Section("WORLD SWITCHES", "The game's own switches. Off puts the game's value back.");
+    SwitchList(gWorldSw, IM_ARRAYSIZE(gWorldSw));
+    Section("RADAR", nullptr);
+    SwitchList(gRadarSw, IM_ARRAYSIZE(gRadarSw));
+    Section("FUN", nullptr);
+    SwitchList(gFunSw, IM_ARRAYSIZE(gFunSw));
+    for (auto& f : gFloats) {
+        ImGui::TextUnformatted(f.label);
+        if (Slider(f.label, &f.v, f.lo, f.hi, f.def, "%.2f")) {
+            float cur = 0;
+            if (GameBase() && ReadMemory(GameBase() + f.at, &cur, 4) && std::isfinite(cur) && std::fabs(cur) < 1e5f)
+                WriteGameMemory(f.at, &f.v, 4), Log("%s %.2f", f.label, f.v);
+            else Log("%s: the value doesn't look right; not changed", f.label);
+        }
+    }
+    if (Toggle("Fake cape level", &gFakeCape, "Shows your cape at the level below (the game's own debug switch).")) {
+        if (!SetByte("Fake cape level", 0x34804C0, gFakeCape)) gFakeCape = !gFakeCape;
+    }
+    if (Slider("fakecape", &gFakeCapeLevel, 0.f, 20.f, 1.f, "level %.0f")) {
+        float cur = 0;
+        if (GameBase() && ReadMemory(GameBase() + 0x2FF53B4, &cur, 4) && std::isfinite(cur))
+            WriteGameMemory(0x2FF53B4, &gFakeCapeLevel, 4);
+    }
+    Section("DEBUG", nullptr);
+    SwitchList(gDebugSw, IM_ARRAYSIZE(gDebugSw));
+}
+
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
     if (Toggle("No collision", &F.noCollision,
@@ -3097,7 +3182,7 @@ void FeaturesTab() {
             case 8: TeleportSection(); break;
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
-            case 11: SkySection(); break;
+            case 11: SkySection(); SwitchesSection(); break;
             case 12: SpawnTab(); CreatureControlsSection(); break;
             case 13: MusicSection(); break;
             case 14: MenusSection(); break;
