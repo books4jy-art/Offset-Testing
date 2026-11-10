@@ -1436,7 +1436,6 @@ void EffectsSection() {
     Section("ONE-OFF EFFECTS", nullptr);
     struct Once { const char* label; const char* type; };
     static const Once kOnce[] = {{"Starry umbrella (toggle)", "SocialToggleStarryUmbrella"},
-                                 {"Starry outfit", "SocialStarryOutfitEvent"},
                                  {"Fireworks", "SocialFireworks"},
                                  {"Riddle shrine answer", "RiddleShrineNoteAnswerEffect"}};
     for (int i = 0; i < (int)IM_ARRAYSIZE(kOnce); i++) {
