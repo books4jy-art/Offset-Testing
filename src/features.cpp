@@ -292,6 +292,7 @@ bool OneShot(const char* type) {
         "GrantSpell", "RemoveSpell", "AvatarSetOutfit", "AvatarDoShout", "AvatarBreakHandHold", "SetAvatarMinYSpeed",
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
+        "OpenDanceMenu", "SocialMessageStones", "SocialRandomGame", "SocialFireworksMenu", "SetLocalAudienceJelly", "DisplayText", "DisplayTitleCard", "HubbaBubbaZone", "MusicalMoteTarget", "HomeDirectoryButton",
         "SetCameraShake", "AvatarGrindToPos", "AvatarOverrideCapeLevel", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
@@ -1832,6 +1833,159 @@ void SwitchesSection() {
     SwitchList(gDebugSw, IM_ARRAYSIZE(gDebugSw));
 }
 
+// ---------------------------------------------------------------- 0.27.0: TSM / TheVoid features (game events)
+// Event names and settings as TSM and TheVoid fire them; the code is ours. All are one-shot (no handle is kept: the
+// game owns these events and deletes them itself, e.g. on level change).
+
+// A new marker at your position (+ up, + ahead along x/z offsets), kept in OffsetLab.marks so it lives as long as
+// the event using it. Lua code naming it is returned in `ref`; false when your position can't be read.
+bool MarkerHere(const char* what, float up, std::string& ref, float scale = 1.f) {
+    float p[3];
+    if (!LocalAvatarPos(p)) {
+        Log("%s: your position couldn't be read", what);
+        return false;
+    }
+    char b[320];
+    snprintf(b, sizeof b,
+             "OffsetLab.marks = OffsetLab.marks or {}\n"
+             "local m = game:markerBarn():CreateMarker(0)\n"
+             "m:pos({%.3f, %.3f, %.3f})\n"
+             "pcall(function() m:scale({%.2f, %.2f, %.2f}) end)\n"
+             "OffsetLab.marks[#OffsetLab.marks + 1] = m\n"
+             "OffsetLab.lastMark = m\n",
+             p[0], p[1] + up, p[2], scale, scale, scale);
+    ref = b;
+    return true;
+}
+
+// Runs a marker script and then the event (both in one script, so the marker exists when the event reads it).
+bool StartWithMarker(const std::string& what, const char* type, const std::string& markerLua,
+                     const std::vector<Set>& sets) {
+    std::string ev = EventLua("", type, sets);
+    if (ev.empty()) return false;
+    return Run(what, std::string(kPrelude) + "do\n" + markerLua + "end\n" + ev, std::string("once:") + type);
+}
+
+struct SocialExtraState { int danceMode = 0; bool muteDance = false; } SX;
+
+void SocialExtrasSection() {
+    Section("SOCIAL EXTRAS", "More of the game's social menus and games (as TSM and TheVoid open them).");
+    static const char* kModes[] = {"Dance", "Sparkler", "Muscle"};
+    static const char* kModeIds[] = {"kDanceButtonType_Dance", "kDanceButtonType_Sparkler", "kDanceButtonType_Muscle"};
+    ImGui::SetNextItemWidth(Px(250));
+    ImGui::Combo("##dmode", &SX.danceMode, kModes, IM_ARRAYSIZE(kModes));
+    ImGui::SameLine();
+    ImGui::Checkbox("Mute dance anims", &SX.muteDance);
+    if (ImGui::Button("Open dance menu", ImVec2(Px(250), 0)))
+        StartEvent(std::string(kModes[SX.danceMode]) + " menu", "", "OpenDanceMenu",
+                   {{"mode", Quote(kModeIds[SX.danceMode]), std::to_string(SX.danceMode)},
+                    {"controlsCameraPos", "false", ""},
+                    {"muteAnims", SX.muteDance ? "true" : "false", ""}});
+    struct Btn { const char* label; const char* type; };
+    static const Btn kBtn[] = {{"Message stones", "SocialMessageStones"}, {"Random game", "SocialRandomGame"},
+                               {"Fireworks menu", "SocialFireworksMenu"}, {"Audience jelly", "SetLocalAudienceJelly"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kBtn); i++) {
+        if (i % 2 == 0) ImGui::SameLine();
+        if (ImGui::Button(kBtn[i].label, ImVec2(Px(250), 0))) StartEvent(kBtn[i].label, "", kBtn[i].type, {});
+    }
+    Dim("Audience jelly: the jellyfish audience for your shouts. Message stones: the game's message stone menu.");
+}
+
+struct ReactState { int type = 1; float power = 1.f; } RX;
+
+void AudienceReactSection() {
+    Section("AUDIENCE REACTIONS", "The game's audience reaction to a shout (LocalDoAudienceReact): heart, shocked, "
+                                  "touched (cry) or light.");
+    static const char* kTypes[] = {"Default", "Heart", "Shocked", "Touched (cry)", "Light"};
+    static const char* kIds[] = {"kEmoteShoutType_Default", "kEmoteShoutType_Heart", "kEmoteShoutType_Shock",
+                                 "kEmoteShoutType_Touched", "kEmoteShoutType_Light"};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kTypes); i++) {
+        if (i % 3) ImGui::SameLine();
+        if (ImGui::Button(kTypes[i], ImVec2(Px(200), 0))) {
+            RX.type = i;
+            StartEvent(std::string("Audience reaction: ") + kTypes[i], "", "LocalDoAudienceReact",
+                       {{"shoutType", Quote(kIds[i]), std::to_string(i)}, {"power", Num(RX.power), ""}});
+        }
+    }
+    ImGui::TextUnformatted("Power");
+    Slider("rxp", &RX.power, 0.1f, 5.f, 1.f, "%.2f");
+}
+
+struct ScreenTextState { char text[128] = "Hello from Offset Lab"; char sub[128] = ""; float x = 0.5f, y = 0.3f,
+                         dur = 4.f, scale = 0.1f, col[3] = {1, 1, 1}; } TX;
+
+void ScreenTextSection() {
+    Section("SCREEN TEXT", "The game's own on-screen text and title card (DisplayText / DisplayTitleCard). Only you "
+                           "see it.");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::InputText("##txt", TX.text, sizeof TX.text);
+    ImGui::TextUnformatted("Position x / y, seconds, size");
+    Slider("txx", &TX.x, 0.f, 1.f, 0.5f, "x %.2f");
+    Slider("txy", &TX.y, 0.f, 1.f, 0.3f, "y %.2f");
+    Slider("txd", &TX.dur, 0.5f, 30.f, 4.f, "%.1f s");
+    Slider("txs", &TX.scale, 0.02f, 0.5f, 0.1f, "size %.2f");
+    ImGui::ColorEdit3("Text colour", TX.col);
+    if (ImGui::Button("Show text", ImVec2(Px(250), 0))) {
+        char c[96];
+        snprintf(c, sizeof c, "{%.3f, %.3f, %.3f, 1.0}", TX.col[0], TX.col[1], TX.col[2]);
+        StartEvent("Screen text", "", "DisplayText",
+                   {{"text", Quote(TX.text), ""}, {"x", Num(TX.x), ""}, {"y", Num(TX.y), ""},
+                    {"duration", Num(TX.dur), ""}, {"scale", Num(TX.scale), ""}, {"color", c, ""},
+                    {"vAlign", "2", ""}, {"wrapScreenWidth", "0.9", ""}, {"shadow", "true", ""},
+                    {"background", "false", ""}, {"worldScale", "false", ""}, {"speed", "{0, 0, 0}", ""},
+                    {"lineOfSightNeeded", "false", ""}, {"hideDuringMenus", "false", ""},
+                    {"usePixelSizeFont", "false", ""}, {"isCreditsText", "false", ""},
+                    {"fadeInTime", "0.3", ""}, {"fadeOutTime", "0.3", ""}, {"delay", "0", ""}});
+    }
+    ImGui::TextUnformatted("Title card subtitle");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::InputText("##sub", TX.sub, sizeof TX.sub);
+    if (ImGui::Button("Show title card", ImVec2(Px(250), 0)))
+        StartEvent("Title card", "", "DisplayTitleCard",
+                   {{"mainTitle", Quote(TX.text), ""}, {"subTitle", Quote(TX.sub), ""}, {"shadow", "true", ""},
+                    {"forceFirstTime", "true", ""}, {"yOffset", "0", ""}},
+                   true);
+    Dim("The title card is the big level-name style title.");
+}
+
+struct WorldSpawnState { float bubble = 5.f; } WS;
+
+void WorldSpawnsSection() {
+    Section("WORLD SPAWNS", "Game objects placed where you stand (as TSM spawns them). They stay until you change "
+                            "level.");
+    ImGui::TextUnformatted("Bubble zone size");
+    Slider("bubsz", &WS.bubble, 1.f, 30.f, 5.f, "%.1f");
+    if (ImGui::Button("Bubble zone", ImVec2(Px(250), 0))) {
+        float p[3];
+        if (!LocalAvatarPos(p)) {
+            Log("Bubble zone: your position couldn't be read");
+        } else {
+            char t[256];
+            snprintf(t, sizeof t, "{{%.2f, 0, 0, 0}, {0, %.2f, 0, 0}, {0, 0, %.2f, 0}, {%.3f, %.3f, %.3f, 1}}",
+                     WS.bubble, WS.bubble, WS.bubble, p[0], p[1], p[2]);
+            StartEvent("Bubble zone", "", "HubbaBubbaZone", {{"transform", t, ""}, {"type", "0", ""}});
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Butterflies", ImVec2(Px(250), 0))) {
+        std::string m;
+        if (MarkerHere("Butterflies", 1.f, m))
+            StartWithMarker("Butterflies", "MusicalMoteTarget",
+                            m + "OffsetLab.markClump = game:clumpBarn():CreateClumpWithSize(1)\n"
+                                "OffsetLab.markClump:SetAt(0, m)\n",
+                            {{"markers", "OffsetLab.markClump", ""}, {"soundName", "\"\"", ""},
+                             {"parentToAvatarXZ", "true", ""}, {"carryAction", "0", ""}});
+    }
+    if (ImGui::Button("Nest directory button", ImVec2(Px(250), 0))) {
+        std::string m;
+        if (MarkerHere("Nest directory", 0.f, m, 5.f))
+            StartWithMarker("Nest directory button", "HomeDirectoryButton", m,
+                            {{"buttonPos", "OffsetLab.lastMark", ""}});
+    }
+    Dim("Bubble zone: the bubble-gum zone. Butterflies: the musical motes that follow you. Nest directory: the "
+        "button that opens the nest list.");
+}
+
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
     if (Toggle("No collision", &F.noCollision,
@@ -3203,10 +3357,10 @@ void FeaturesTab() {
             case 6: CameraSection(); break;
             case 7: WorldSection(); break;
             case 8: TeleportSection(); break;
-            case 9: SocialSection(); break;
-            case 10: ShoutSection(); break;
-            case 11: SkySection(); SwitchesSection(); CodeSwitchesSection(); break;
-            case 12: SpawnTab(); CreatureControlsSection(); break;
+            case 9: SocialSection(); SocialExtrasSection(); break;
+            case 10: ShoutSection(); AudienceReactSection(); break;
+            case 11: SkySection(); ScreenTextSection(); SwitchesSection(); CodeSwitchesSection(); break;
+            case 12: SpawnTab(); WorldSpawnsSection(); CreatureControlsSection(); break;
             case 13: MusicSection(); break;
             case 14: MenusSection(); break;
             case 15: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
