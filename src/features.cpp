@@ -1728,6 +1728,10 @@ const CodePatch kFreeZoomPatch = {"Unlimited zoom", 0x291F078, 0xBD05B260u /* st
 // first set (0xEE74F8 lookup), otherwise the result of a second lookup. The branch to the second lookup
 // (0xDFC174, cbz x0) becomes a NOP, so the function always returns 1. One aligned word: always a whole instruction.
 const CodePatch kUnlockPatch = {"Unlock all", 0xDFC174, 0xB40000C0u /* cbz x0, #0xdfc18c */, kNop};
+// 0.22.1: the closet checks ownership itself (0x1BBC3EC: bl 0xEE74F8, the same lookup, called directly, so the patch
+// above never reached it). As TSM does, the call becomes a NOP: x0 keeps its non-null argument, so the item counts
+// as owned in the closet. Restored with the first patch.
+const CodePatch kUnlockClosetPatch = {"Unlock all (closet)", 0x1BBC3EC, 0x97CCAC43u /* bl 0xee74f8 */, kNop};
 // Read all messages: the chat bubble code (0x1478CAC..0x1478CE8) works out in w22 whether a message's text may be
 // shown (table/friend checks). The two places that can make it 0 (mov w22, wzr / orr w22, w0, w8) give 1 instead;
 // every other path already gives 1.
@@ -2493,6 +2497,7 @@ void SocialSection() {
                "it checks (wearing, buying, saving). Off: the game's code put back; you may need a level change to "
                "see your real unlocks again.")) {
         if (!SetCodePatch(kUnlockPatch, X.unlockAll)) X.unlockAll = !X.unlockAll;
+        else if (!SetCodePatch(kUnlockClosetPatch, X.unlockAll)) SetCodePatch(kUnlockPatch, !X.unlockAll), X.unlockAll = !X.unlockAll;
         else Log("Unlock all %s", X.unlockAll ? "on" : "off");
     }
 }
