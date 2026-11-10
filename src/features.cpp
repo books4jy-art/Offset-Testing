@@ -1421,16 +1421,11 @@ void SkySection() {
 // Effects & toys (0.18.0): the Weather, sky & visuals events that need no game objects. Wing/footstep effects and
 // the snow props run while on (kept, switched off with SetEnabled(false)); the rest are one-shots.
 struct VisToggle { const char* label; const char* type; bool on; };
-VisToggle gVisToggles[] = {
-    {"Almond blossom wings", "AlmondBlossomWingEffects", false}, {"Anniversary 2026 wings", "Anni2026WingEffects", false},
-    {"Blue tear wings", "BlueTearWingEffects", false},           {"Bluebird wings", "BluebirdWingEffects", false},
-    {"Maypole wings", "MaypoleWingEffects", false},             {"Flower footsteps", "FlowerFootstepEffects", false},
-    {"Flower horn", "FlowerHornEffects", false},                 {"Snowboard", "Snowboard", false},
-    {"Snowball mittens", "SnowBallMittens", false},
-};
+VisToggle gVisToggles[] = {{"", "", false}};  // 0.23.1: the wing/footstep/snow effect events only play as part of
+                                              // their cape or prop; wear it from Outfits / Toys & props instead
 void EffectsSection() {
-    Section("WING & FOOTSTEP EFFECTS, PROPS", "The game's own effect events, on your screen. Off switches them off.");
     for (auto& t : gVisToggles) {
+        if (!*t.type) continue;
         ImGui::PushID(t.type);
         if (ImGui::Checkbox(t.label, &t.on)) {
             if (t.on) StartEvent(std::string(t.label) + " on", std::string("vis:") + t.type, t.type, {});
@@ -1550,23 +1545,14 @@ std::vector<int> gPlaceRows;
 std::string gPlaceRowsFor = "\x01";
 
 void PropsSection() {
-    Section("PROPS", "Hold props and place placeables, the game's own events. Placeables are made with "
-                     "preventNetworking, so only you see them.");
-    struct Btn { const char* label; const char* type; };
-    static const Btn kHold[] = {{"Shepherd staff", "AP27ShepherdStaff"}, {"Shield", "AP27Shield"},
-                                {"Spear", "AP27Spear"},                  {"Manatee figurine", "AP27ManateeFigurine"},
-                                {"Enable player prop", "EnablePlayerProp"}, {"Wear tea set", "WearTeaSet"},
-                                {"Tea table action", "TeaTableAction"},     {"Trampoline", "ProtoTrampoline"},
-                                {"Prop animation", "PropSimpleAnim"},       {"Placeable action", "PlaceableAction"},
-                                {"Plushie toss game", "PlacePlushieTossPlaceable"}, {"Puzzle key", "PlacePuzzleKey"}};
-    for (int i = 0; i < (int)IM_ARRAYSIZE(kHold); i++) {
-        if (i % 2) ImGui::SameLine();
-        if (ImGui::Button(kHold[i].label, ImVec2(Px(250), 0))) StartEvent(kHold[i].label, "", kHold[i].type, {});
-    }
-    ImGui::TextUnformatted("Place a placeable (only you see it)");
-    LoadDefs("Data/Resources/PlaceableDefs.json", "placeables", gPlaceables, gPlaceablesTried);
+    // 0.23.1: toys, placeables and props are the game's consumables, taken out through TriggerToyEvent (the path the
+    // spells use; TSM does the same). The earlier route (PlacePlaceablePickup with placeable def names, the AP27 prop
+    // events) started without errors but showed nothing.
+    Section("TOYS & PROPS", "Every toy, placeable and prop in the game's consumable list (tables, swings, tea sets, "
+                            "bonfires, beach balls, balloon hats, props...), taken out the way their spells do.");
+    LoadDefs("Data/Resources/ConsumableDefs.json", "consumables", gPlaceables, gPlaceablesTried);
     if (gPlaceables.empty()) {
-        Dim("The placeable list couldn't be read from the game yet.");
+        Dim("The consumable list couldn't be read from the game yet.");
         if (ImGui::Button("Try again##pl")) gPlaceablesTried = false;
         return;
     }
@@ -1577,18 +1563,21 @@ void PropsSection() {
         gPlaceRowsFor = q;
         gPlaceRows.clear();
         for (int i = 0; i < (int)gPlaceables.size(); i++)
-            if (q.empty() || Lower(gPlaceables[i].name).find(q) != std::string::npos) gPlaceRows.push_back(i);
+            if (q.empty() || Lower(gPlaceables[i].name).find(q) != std::string::npos ||
+                Lower(gPlaceables[i].type).find(q) != std::string::npos)
+                gPlaceRows.push_back(i);
     }
-    if (ImGui::BeginChild("##placeables", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 8.5f), ImGuiChildFlags_Border)) {
+    Dim("%zu items", gPlaceRows.size());
+    if (ImGui::BeginChild("##placeables", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 9.5f), ImGuiChildFlags_Border)) {
         ImGuiListClipper clip;
         clip.Begin((int)gPlaceRows.size());
         while (clip.Step())
             for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
                 const DefItem& d = gPlaceables[gPlaceRows[i]];
-                if (IconRow(d.icon, d.name, d.name.c_str()))
-                    StartEvent("Placeable " + d.name, "", "PlacePlaceablePickup",
-                               {{"defName", Quote(d.name), ""}, {"preventNetworking", "true", ""},
-                                {"useExactTransform", "false", ""}});
+                std::string label = d.type.empty() ? d.name : d.name + "  (" + d.type + ")";
+                if (IconRow(d.icon, label, d.name.c_str()))
+                    StartEvent("Toy " + d.name, "", "TriggerToyEvent",
+                               {{"consumableName", Quote(d.name), ""}, {"persistent", "false", ""}});
             }
     }
     TouchScroll();
@@ -1604,7 +1593,7 @@ void CreatureControlsSection() {
         StartEvent(CR.krillAsleep ? "Krill asleep" : "Krill awake", "", "AwakenDarkCreatures",
                    {{"awake", CR.krillAsleep ? "false" : "true", ""}, {"fireOnce", "true", ""}});
     struct Btn { const char* label; const char* type; };
-    static const Btn kBtn[] = {{"Dark horn blast", "DarkHornBlast"}, {"Release birds", "ReleaseBirds"},
+    static const Btn kBtn[] = {{"Dark horn blast", "DarkHornBlast"},
                                {"Flip crabs upright", "Crab_Straighten"}};
     for (int i = 0; i < (int)IM_ARRAYSIZE(kBtn); i++) {
         if (i % 2) ImGui::SameLine();
