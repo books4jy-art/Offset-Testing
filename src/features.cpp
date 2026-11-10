@@ -1539,7 +1539,7 @@ void MusicSection() {
 
 // 0.22.0: props, creature controls and reflection from the Spirits/NPCs and Props/toys pages.
 std::vector<DefItem> gPlaceables;
-bool gPlaceablesTried = false;
+[[maybe_unused]] bool gPlaceablesTried = false;
 char gPlaceFilter[64] = "";
 std::vector<int> gPlaceRows;
 std::string gPlaceRowsFor = "\x01";
