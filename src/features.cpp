@@ -1066,6 +1066,19 @@ void TransformSection() {
 
 // 0.24.0: outfits (props included) are worn through the game's own Lua function OutfitSelectSetOutfit(game, id), as
 // TSM does. The id: the def name without "CharSkyKid_"; other defs become "<Type>_<last part of the name>".
+// 0.28.0: props (tested 0.27.1: neither the closet call nor, before 0.24.0, AvatarSetOutfit showed them). Three ways to
+// try, each logged: the closet call TSM uses; the game's outfit event with its prop slot (local); the closet call
+// followed by EnablePlayerProp (the game's "hold your prop" event).
+int gPropMethod = 0;
+const char* const kPropMethods[] = {"Closet (TSM's way)", "Outfit event (local)", "Closet + hold prop"};
+
+void ClosetSet(const std::string& id, const std::string& what, const std::string& key) {
+    Run(what,
+        "if type(OutfitSelectSetOutfit) ~= \"function\" then error(\"OutfitSelectSetOutfit isn't in this build\") end\n"
+        "OutfitSelectSetOutfit(game, \"" + id + "\")\n",
+        key);
+}
+
 void WearOutfit(const std::string& name, const std::string& type) {
     std::string id;
     const std::string kPrefix = "CharSkyKid_";
@@ -1082,10 +1095,17 @@ void WearOutfit(const std::string& name, const std::string& type) {
             Log("Outfit: %s has an unusual name; not sent", name.c_str());
             return;
         }
-    Run("Outfit: " + id,
-        "if type(OutfitSelectSetOutfit) ~= \"function\" then error(\"OutfitSelectSetOutfit isn't in this build\") end\n"
-        "OutfitSelectSetOutfit(game, \"" + id + "\")\n",
-        "outfit:" + type);
+    if (Lower(type) != "prop") {
+        ClosetSet(id, "Outfit: " + id, "outfit:" + type);
+        return;
+    }
+    const std::string how = std::string(" (") + kPropMethods[gPropMethod] + ")";
+    if (gPropMethod == 1) {
+        StartEvent("Prop: " + name + how, "", "AvatarSetOutfit", {{"prop", Quote(name), ""}});
+        return;
+    }
+    ClosetSet(id, "Prop: " + id + how, "outfit:prop");
+    if (gPropMethod == 2) StartEvent("", "", "EnablePlayerProp", {});
 }
 
 void OutfitsSection() {
@@ -1155,9 +1175,21 @@ void OutfitsSection() {
     }
     TouchScroll();
     ImGui::EndChild();
-    if (ImGui::Button("Back to my outfit")) {
-        for (const auto& t : types) StopEvent("", ("outfit_" + t.first).c_str());
-        Log("Outfit changes stopped");
+    // 0.28.0: "Back to my outfit" stopped saved events that no longer exist (outfits are worn through the closet call
+    // since 0.24.0), so it did nothing; taking the piece off is what the closet itself offers (Type_None, as TSM does).
+    {
+        std::string t = M.outfitType;
+        if (!t.empty()) t[0] = (char)toupper((unsigned char)t[0]);
+        if (ImGui::Button(("Take off " + Lower(M.outfitType)).c_str()) && !t.empty())
+            ClosetSet(t + "_None", "Took off " + Lower(M.outfitType), "outfit:" + M.outfitType);
+    }
+    if (Lower(M.outfitType) == "prop") {
+        ImGui::TextUnformatted("How to wear props");
+        for (int i = 0; i < (int)IM_ARRAYSIZE(kPropMethods); i++)  // one per line: three in a row didn't fit
+            ImGui::RadioButton(kPropMethods[i], &gPropMethod, i);
+        if (ImGui::Button("Hold prop now", ImVec2(Px(250), 0))) StartEvent("Hold prop", "", "EnablePlayerProp", {});
+        Dim("Props didn't show with the closet call in the last test: try each way and send the log, so the one that "
+            "works can become the only one.");
     }
 
     Section("EDIT OUTFITS", "Your avatar's height and size (TheVoid's height/scale values; the game holds them to "
@@ -1575,73 +1607,109 @@ void MusicSection() {
 }
 
 // 0.22.0: props, creature controls and reflection from the Spirits/NPCs and Props/toys pages.
-std::vector<DefItem> gPlaceables;
-[[maybe_unused]] bool gPlaceablesTried = false;
-char gPlaceFilter[64] = "";
-std::vector<int> gPlaceRows;
-std::string gPlaceRowsFor = "\x01";
 
-void PropsSection() {
-    // 0.23.1: toys, placeables and props are the game's consumables, taken out through TriggerToyEvent (the path the
-    // spells use; TSM does the same). The earlier route (PlacePlaceablePickup with placeable def names, the AP27 prop
-    // events) started without errors but showed nothing.
-    Section("SPELL PREVIEW", "Readies a spell the way the shop's try-before-you-buy preview does (TriggerToyEvent); "
-                             "then activate any spell to use it. Toys, props, message items and teleports. Your "
-                             "inventory isn't changed, and the level server may remove placed items (\"revoke\").");
-    // ConsumableDefs isn't a game file (the game gets it from the server at login), so the ids are the game's own
-    // consumable ids (its consumable_name_* text keys): toys, placeables, props and message items.
-    if (gPlaceables.empty()) {
-        static const char* kToys[] = {
-            "beachball", "birthdaycake_small", "birthdaycake_medium", "birthdaycake_large", "bonfire", "pinwheel",
-            "seesaw", "swing", "table", "tablexmas", "teaset", "placeablerace_generic", "skyballgoals_casualwood",
-            "sharedspace_candle", "memory_candle", "figurineskykid_normaledition", "message_boat", "message_crane",
-            "message_gondola", "message_lantern", "message_rose", "message_stone", "message_treasure",
-            "firework_crab", "firework_jelly", "firework_manta", "fireworks", "dark_dragon_firework",
-            "outfit_prop_birthdaycake_giant", "outfit_prop_bluebird_swing", "outfit_prop_cannon_pin",
-            "outfit_hat_ballooncrab", "outfit_hat_ballooncrown", "outfit_hat_balloonjellyfish",
-            "outfit_hat_balloonkrill", "outfit_hat_balloonmanta", "outfit_horn_ballooncrab",
-            "outfit_horn_ballooncrown", "outfit_horn_balloonjellyfish", "outfit_horn_balloonkrill",
-            "outfit_horn_balloonmanta", "outfit_face", "outfit_wing_none", "butterfly_pastel", "bloom_sakura",
-            "bloom_rose_trail", "shout_crab", "shout_jelly", "shout_manta", "shout_aurora_keychain",
-            "shout_manatee_keychain", "shout_kizunaaicn", "potion_growth_huge", "potion_growth_tiny",
-            "potion_growth_keychain", "potion_recharge_thermo", "resize_potion", "rainbow", "rainbow_handhold",
-            "color_collector", "star_protector", "repellant_krill", "birthdayhat_krill",
-            "teleport_deer_summon", "teleport_figurine_littleprince", "teleport_figurineskykid_se",
-            "teleport_forest_cave", "teleport_forest_elder", "teleport_forest_elder_tiny", "teleport_forgotten_ark",
-            "teleport_hermit_valley", "teleport_isle_elder", "teleport_manatee_plush", "teleport_nature_turtle",
-            "teleport_oreo", "teleport_prairie_elder", "teleport_prairie_peaks", "teleport_prairie_peaks_bloom",
-            "teleport_prairie_village_bloom", "teleport_prophecy_cave", "teleport_sanctuary_island",
-            "teleport_starlight_desert", "teleport_starlight_desert_beach", "teleport_valley_elder",
-            "teleport_vault_elder", "teleport_wasteland_elder", "teleport_wishing_tree", "teleport_wisteria_tree",
-            "teleport_you_and_i"};
-        for (const char* t : kToys) gPlaceables.push_back({t, "", "", 1});
+// 0.28.0: Features > Spells. The game's own consumable ids (its consumable_name_* text keys; ConsumableDefs isn't a
+// game file, the server sends it at login), readied through TriggerToyEvent: the shop's try-before-you-buy path,
+// as TSM uses it. A readied spell plays when you next cast a spell. Nothing is added to or taken from your inventory
+// by the mod, and the level server may remove placed items ("revoke" in the log).
+struct SpellGroup { const char* label; std::vector<const char*> ids; };
+const std::vector<SpellGroup>& SpellGroups() {
+    static const std::vector<SpellGroup> kGroups = {
+        {"Toys", {"beachball", "birthdaycake_small", "birthdaycake_medium", "birthdaycake_large", "bonfire",
+                  "pinwheel", "seesaw", "swing", "table", "tablexmas", "teaset", "placeablerace_generic",
+                  "skyballgoals_casualwood", "sharedspace_candle", "memory_candle",
+                  "figurineskykid_normaledition"}},
+        {"Messages", {"message_boat", "message_crane", "message_gondola", "message_lantern", "message_rose",
+                      "message_stone", "message_treasure"}},
+        {"Props", {"outfit_prop_birthdaycake_giant", "outfit_prop_bluebird_swing", "outfit_prop_cannon_pin",
+                   "outfit_face", "outfit_wing_none"}},
+        {"Balloons", {"outfit_hat_ballooncrab", "outfit_hat_ballooncrown", "outfit_hat_balloonjellyfish",
+                      "outfit_hat_balloonkrill", "outfit_hat_balloonmanta", "outfit_horn_ballooncrab",
+                      "outfit_horn_ballooncrown", "outfit_horn_balloonjellyfish", "outfit_horn_balloonkrill",
+                      "outfit_horn_balloonmanta"}},
+        {"Effects", {"butterfly_pastel", "bloom_sakura", "bloom_rose_trail", "rainbow", "rainbow_handhold",
+                     "color_collector", "star_protector", "repellant_krill", "birthdayhat_krill"}},
+        {"Potions", {"potion_growth_huge", "potion_growth_tiny", "potion_growth_keychain", "potion_recharge_thermo",
+                     "resize_potion"}},
+        {"Shouts", {"shout_crab", "shout_jelly", "shout_manta", "shout_aurora_keychain", "shout_manatee_keychain",
+                    "shout_kizunaaicn"}},
+        {"Fireworks", {"firework_crab", "firework_jelly", "firework_manta", "fireworks", "dark_dragon_firework"}},
+        {"Teleports", {"teleport_deer_summon", "teleport_figurine_littleprince", "teleport_figurineskykid_se",
+                       "teleport_forest_cave", "teleport_forest_elder", "teleport_forest_elder_tiny",
+                       "teleport_forgotten_ark", "teleport_hermit_valley", "teleport_isle_elder",
+                       "teleport_manatee_plush", "teleport_nature_turtle", "teleport_oreo", "teleport_prairie_elder",
+                       "teleport_prairie_peaks", "teleport_prairie_peaks_bloom", "teleport_prairie_village_bloom",
+                       "teleport_prophecy_cave", "teleport_sanctuary_island", "teleport_starlight_desert",
+                       "teleport_starlight_desert_beach", "teleport_valley_elder", "teleport_vault_elder",
+                       "teleport_wasteland_elder", "teleport_wishing_tree", "teleport_wisteria_tree",
+                       "teleport_you_and_i"}},
+    };
+    return kGroups;
+}
+
+struct SpellsState { int group = 0; bool keep = false; char filter[64] = "", custom[64] = ""; std::string last; } SP;
+
+void ReadySpell(const std::string& id) {
+    for (char c : id)
+        if (!(isalnum((unsigned char)c) || c == '_')) {
+            Log("Spells: \"%s\" isn't a spell id (letters, digits and _ only)", id.c_str());
+            return;
+        }
+    if (StartEvent("Spell ready: " + id + " (cast any spell to use it)", "", "TriggerToyEvent",
+                   {{"consumableName", Quote(id), ""}, {"persistent", SP.keep ? "true" : "false", ""}}))
+        SP.last = id;
+}
+
+std::string ConsumableLabel(const char* id) {
+    std::string s = id;
+    for (const char* pre : {"teleport_", "message_", "outfit_prop_", "outfit_", "potion_", "shout_"})
+        if (s.rfind(pre, 0) == 0 && s.size() > strlen(pre)) { s = s.substr(strlen(pre)); break; }
+    for (char& c : s) if (c == '_') c = ' ';
+    if (!s.empty()) s[0] = (char)toupper((unsigned char)s[0]);
+    return s;
+}
+
+void SpellsTab() {
+    Section("SPELLS", "Tap a spell to ready it (the shop's preview path, TriggerToyEvent), then cast any spell you "
+                      "have: the readied one plays instead. More than one can be readied before a cast.");
+    ImGui::Checkbox("Keep ready after a cast", &SP.keep);
+    Dim(SP.keep ? "Readied spells stay ready (the game's persistent switch) until you change level."
+                : "A readied spell is used by your next cast.");
+    if (!SP.last.empty()) ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.f, 1.f), "Last readied: %s", SP.last.c_str());
+    const auto& groups = SpellGroups();
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    for (int i = 0; i < (int)groups.size(); i++) {
+        if (i % 3) ImGui::SameLine();
+        bool sel = SP.group == i;
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+        if (ImGui::Button(groups[i].label, ImVec2(bw, Dp(40)))) SP.group = i;
+        if (sel) ImGui::PopStyleColor();
     }
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##plf", "search", gPlaceFilter, sizeof gPlaceFilter);
-    std::string q = Lower(gPlaceFilter);
-    if (q != gPlaceRowsFor) {
-        gPlaceRowsFor = q;
-        gPlaceRows.clear();
-        for (int i = 0; i < (int)gPlaceables.size(); i++)
-            if (q.empty() || Lower(gPlaceables[i].name).find(q) != std::string::npos ||
-                Lower(gPlaceables[i].type).find(q) != std::string::npos)
-                gPlaceRows.push_back(i);
-    }
-    Dim("%zu items", gPlaceRows.size());
-    if (ImGui::BeginChild("##placeables", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 9.5f), ImGuiChildFlags_Border)) {
-        ImGuiListClipper clip;
-        clip.Begin((int)gPlaceRows.size());
-        while (clip.Step())
-            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
-                const DefItem& d = gPlaceables[gPlaceRows[i]];
-                std::string label = d.type.empty() ? d.name : d.name + "  (" + d.type + ")";
-                if (IconRow(d.icon, label, d.name.c_str()))
-                    StartEvent("Spell preview ready: " + d.name + " (activate a spell to use it)", "", "TriggerToyEvent",
-                               {{"consumableName", Quote(d.name), ""}, {"persistent", "false", ""}});
-            }
+    ImGui::InputTextWithHint("##spf", "search all spells", SP.filter, sizeof SP.filter);
+    std::string q = Lower(SP.filter);
+    std::vector<const char*> rows;
+    for (int g = 0; g < (int)groups.size(); g++)
+        for (const char* id : groups[g].ids)
+            if (q.empty() ? g == SP.group : std::string(id).find(q) != std::string::npos) rows.push_back(id);
+    Dim("%zu spells", rows.size());
+    if (ImGui::BeginChild("##spells", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 9.5f), ImGuiChildFlags_Border)) {
+        float cw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+        for (int i = 0; i < (int)rows.size(); i++) {
+            ImGui::PushID(rows[i]);
+            if (i % 2) ImGui::SameLine();
+            if (ImGui::Button(ConsumableLabel(rows[i]).c_str(), ImVec2(cw, Dp(44)))) ReadySpell(rows[i]);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", rows[i]);
+            ImGui::PopID();
+        }
     }
     TouchScroll();
     ImGui::EndChild();
+    ImGui::TextUnformatted("Another spell id");
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Px(200));
+    ImGui::InputTextWithHint("##spc", "e.g. message_boat", SP.custom, sizeof SP.custom);
+    ImGui::SameLine();
+    if (ImGui::Button("Ready##spc", ImVec2(-1, 0)) && SP.custom[0]) ReadySpell(Lower(SP.custom));
 }
 
 // 0.23.3: the game's placeable list again (PlaceableDefs.json: unit shapes, props, furniture...), placed with
@@ -1909,14 +1977,16 @@ struct ReactState { float power = 1.f; } RX;
 void AudienceReactSection() {
     Section("AUDIENCE REACTIONS", "The game's audience reaction to a shout (LocalDoAudienceReact): heart, shocked, "
                                   "touched (cry) or light.");
-    static const char* kTypes[] = {"Default", "Heart", "Shocked", "Touched (cry)", "Light"};
-    static const char* kIds[] = {"kEmoteShoutType_Default", "kEmoteShoutType_Heart", "kEmoteShoutType_Shock",
-                                 "kEmoteShoutType_Touched", "kEmoteShoutType_Light"};
+    // No "Default" (type 0): the reaction code (0x1123100) reads its table at type - 1, so type 0 read outside the
+    // table and crashed the game (SIGSEGV at 0x11231C0, tested 0.27.1). Only 1..4 are real reactions.
+    static const char* kTypes[] = {"Heart", "Shocked", "Touched (cry)", "Light"};
+    static const char* kIds[] = {"kEmoteShoutType_Heart", "kEmoteShoutType_Shock", "kEmoteShoutType_Touched",
+                                 "kEmoteShoutType_Light"};
     for (int i = 0; i < (int)IM_ARRAYSIZE(kTypes); i++) {
         if (i % 2) ImGui::SameLine();
         if (ImGui::Button(kTypes[i], ImVec2(Px(250), 0))) {
             StartEvent(std::string("Audience reaction: ") + kTypes[i], "", "LocalDoAudienceReact",
-                       {{"shoutType", Quote(kIds[i]), std::to_string(i)}, {"power", Num(RX.power), ""}});
+                       {{"shoutType", Quote(kIds[i]), std::to_string(i + 1)}, {"power", Num(RX.power), ""}});
         }
     }
     ImGui::TextUnformatted("Power");
@@ -3320,7 +3390,7 @@ void FeaturesTab() {
     if (!inWorld) ImGui::TextColored(kAmber300, "Enter the world to use these.");
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
-    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Emotes",
+    static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Spells", "Emotes",
                                   "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn", "Music", "Menus", "All events"};
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
@@ -3367,18 +3437,19 @@ void FeaturesTab() {
             case 1: EnergySection(); break;
             case 2: TransformSection(); ModesSection(); break;
             case 3: OutfitsSection(); break;
-            case 4: ItemsSection(); PropsSection(); PlaceablesSection(); EffectsSection(); break;
-            case 5: EmotesSection(); break;
-            case 6: CameraSection(); break;
-            case 7: WorldSection(); break;
-            case 8: TeleportSection(); break;
-            case 9: SocialSection(); SocialExtrasSection(); break;
-            case 10: ShoutSection(); AudienceReactSection(); break;
-            case 11: SkySection(); ScreenTextSection(); SwitchesSection(); CodeSwitchesSection(); break;
-            case 12: SpawnTab(); WorldSpawnsSection(); CreatureControlsSection(); break;
-            case 13: MusicSection(); break;
-            case 14: MenusSection(); break;
-            case 15: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
+            case 4: ItemsSection(); PlaceablesSection(); EffectsSection(); break;
+            case 5: SpellsTab(); break;
+            case 6: EmotesSection(); break;
+            case 7: CameraSection(); break;
+            case 8: WorldSection(); break;
+            case 9: TeleportSection(); break;
+            case 10: SocialSection(); SocialExtrasSection(); break;
+            case 11: ShoutSection(); AudienceReactSection(); break;
+            case 12: SkySection(); ScreenTextSection(); SwitchesSection(); CodeSwitchesSection(); break;
+            case 13: SpawnTab(); WorldSpawnsSection(); CreatureControlsSection(); break;
+            case 14: MusicSection(); break;
+            case 15: MenusSection(); break;
+            case 16: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
     TouchScroll();
