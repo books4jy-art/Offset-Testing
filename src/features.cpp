@@ -322,8 +322,21 @@ std::string EventLua(const std::string& keyIn, const char* type, const std::vect
                      bool allowUnlisted = false) {
     if (!SafeToFire(type, allowUnlisted)) return std::string();
     const std::string key = OneShot(type) ? std::string() : keyIn;
-    std::vector<Set> sets = GameDefaults(type);  // first the game's defaults, then ours
-    sets.insert(sets.end(), given.begin(), given.end());
+    // first the game's defaults, then ours; an object default (nil) is left out when we give that object ourselves,
+    // so a setting that mustn't be empty (HomeDirectoryButton's buttonPos) is never given nil first
+    // (nil is then our fallback, so the setting is never left unset)
+    std::vector<Set> sets, ours(given);
+    for (auto& d : GameDefaults(type)) {
+        bool mine = false;
+        if (d.value == "nil")
+            for (auto& g : ours)
+                if (g.name == d.name) {
+                    mine = true;
+                    if (g.fallback.empty()) g.fallback = "nil";
+                }
+        if (!mine) sets.push_back(std::move(d));
+    }
+    sets.insert(sets.end(), ours.begin(), ours.end());
     std::string s = "do\n";
     if (!key.empty()) s += "stop(\"" + key + "\")\n";
     s += "local e = game:eventBarn():AddEventByMetaName(\"" + std::string(type) + "\")\n";
@@ -1845,7 +1858,7 @@ bool MarkerHere(const char* what, float up, std::string& ref, float scale = 1.f)
         Log("%s: your position couldn't be read", what);
         return false;
     }
-    char b[320];
+    char b[640];
     snprintf(b, sizeof b,
              "OffsetLab.marks = OffsetLab.marks or {}\n"
              "local m = game:markerBarn():CreateMarker(0)\n"
@@ -1891,7 +1904,7 @@ void SocialExtrasSection() {
     Dim("Audience jelly: the jellyfish audience for your shouts. Message stones: the game's message stone menu.");
 }
 
-struct ReactState { int type = 1; float power = 1.f; } RX;
+struct ReactState { float power = 1.f; } RX;
 
 void AudienceReactSection() {
     Section("AUDIENCE REACTIONS", "The game's audience reaction to a shout (LocalDoAudienceReact): heart, shocked, "
@@ -1900,9 +1913,8 @@ void AudienceReactSection() {
     static const char* kIds[] = {"kEmoteShoutType_Default", "kEmoteShoutType_Heart", "kEmoteShoutType_Shock",
                                  "kEmoteShoutType_Touched", "kEmoteShoutType_Light"};
     for (int i = 0; i < (int)IM_ARRAYSIZE(kTypes); i++) {
-        if (i % 3) ImGui::SameLine();
-        if (ImGui::Button(kTypes[i], ImVec2(Px(200), 0))) {
-            RX.type = i;
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kTypes[i], ImVec2(Px(250), 0))) {
             StartEvent(std::string("Audience reaction: ") + kTypes[i], "", "LocalDoAudienceReact",
                        {{"shoutType", Quote(kIds[i]), std::to_string(i)}, {"power", Num(RX.power), ""}});
         }
@@ -1971,8 +1983,11 @@ void WorldSpawnsSection() {
         std::string m;
         if (MarkerHere("Butterflies", 1.f, m))
             StartWithMarker("Butterflies", "MusicalMoteTarget",
+                            // each spawn keeps its own clump (kept with the markers): replacing a shared one
+                            // could let Lua free a clump an earlier swarm still uses
                             m + "OffsetLab.markClump = game:clumpBarn():CreateClumpWithSize(1)\n"
-                                "OffsetLab.markClump:SetAt(0, m)\n",
+                                "OffsetLab.markClump:SetAt(0, m)\n"
+                                "OffsetLab.marks[#OffsetLab.marks + 1] = OffsetLab.markClump\n",
                             {{"markers", "OffsetLab.markClump", ""}, {"soundName", "\"\"", ""},
                              {"parentToAvatarXZ", "true", ""}, {"carryAction", "0", ""}});
     }
