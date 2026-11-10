@@ -1917,6 +1917,18 @@ const CodePatch kScooterPatch = {"Scooter mode", 0x12343FC, 0x38686808u /* ldrb 
                                  0x52800028u /* mov w8, #1 */};
 // Unlimited zoom (as TSM has it): the whisker camera update stores its clamped zoom distance (str s0,[x19,#0x5b0] at
 // 0x291F078); without that store the camera keeps whatever distance you pinch to.
+// 0.26.0, derived from the 0.35.2 code:
+// Freeze krill: the dark creature update loads its count (ldr w8,[x19,#0x2360] at 0x15A0D5C); 0 skips all of them.
+const CodePatch kFreezeKrillPatch = {"Freeze krill", 0x15A0D5C, 0xB9636268u /* ldr w8, [x19, #0x2360] */,
+                                     0x2A1F03E8u /* mov w8, wzr */};
+// Birthday-hat krill: the creature setup draws the hat when w22 bit 0 or a config byte is set (tbnz at 0x159E75C);
+// the tbnz becomes a jump straight to the hat (b #0x159E770).
+const CodePatch kBirthdayKrillPatch = {"Birthday-hat krill", 0x159E75C, 0x370000B6u /* tbnz w22, #0, #0x159e770 */,
+                                       0x14000005u /* b #0x159e770 */};
+// Disable wind walls: the wind wall update reads its active byte (ldrb w13,[x0,x10] at 0x170A044) and does nothing
+// when it's 0; the load becomes 0.
+const CodePatch kWindWallPatch = {"Disable wind walls", 0x170A044, 0x386A680Du /* ldrb w13, [x0, x10] */,
+                                  0x2A1F03EDu /* mov w13, wzr */};
 const CodePatch kFreeZoomPatch = {"Unlimited zoom", 0x291F078, 0xBD05B260u /* str s0, [x19, #0x5b0] */, kNop};
 
 // Unlock all: the game's "account has unlock" check (0xDFC144, bool (barn, name)) returns 1 when the name is in its
@@ -2838,6 +2850,17 @@ void PatchToggle(const char* label, bool* on, const CodePatch& p, const char* he
     }
 }
 
+void CodeSwitchesSection() {
+    Section("WORLD RULES (game code)", nullptr);
+    static bool freezeKrill = false, bdayKrill = false, windWall = false;
+    PatchToggle("Freeze krill", &freezeKrill, kFreezeKrillPatch,
+                "Dark creatures stop moving (their update is skipped). Off: the game's code put back.");
+    PatchToggle("Birthday-hat krill", &bdayKrill, kBirthdayKrillPatch,
+                "Krill wear their birthday hat. New krill (or an area change) may be needed. Off: code put back.");
+    PatchToggle("Disable wind walls", &windWall, kWindWallPatch,
+                "Wind walls don't push you back. Off: the game's code put back.");
+}
+
 void PlayerMoreMovement() {
     if (ImGui::Button("Land now", ImVec2(Px(260), 0)))
         StartEvent("Land now", "", "AvatarExitFlight", {{"fireOnce", "true", ""}});
@@ -3182,7 +3205,7 @@ void FeaturesTab() {
             case 8: TeleportSection(); break;
             case 9: SocialSection(); break;
             case 10: ShoutSection(); break;
-            case 11: SkySection(); SwitchesSection(); break;
+            case 11: SkySection(); SwitchesSection(); CodeSwitchesSection(); break;
             case 12: SpawnTab(); CreatureControlsSection(); break;
             case 13: MusicSection(); break;
             case 14: MenusSection(); break;
