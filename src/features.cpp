@@ -1548,8 +1548,9 @@ void PropsSection() {
     // 0.23.1: toys, placeables and props are the game's consumables, taken out through TriggerToyEvent (the path the
     // spells use; TSM does the same). The earlier route (PlacePlaceablePickup with placeable def names, the AP27 prop
     // events) started without errors but showed nothing.
-    Section("TOYS & PROPS", "Every toy, placeable and prop in the game's consumable list (tables, swings, tea sets, "
-                            "bonfires, beach balls, balloon hats, props...), taken out the way their spells do.");
+    Section("SPELL PREVIEW", "Readies a spell the way the shop's try-before-you-buy preview does (TriggerToyEvent); "
+                             "then activate any spell to use it. Toys, props, message items and teleports. Your "
+                             "inventory isn't changed, and the level server may remove placed items (\"revoke\").");
     // ConsumableDefs isn't a game file (the game gets it from the server at login), so the ids are the game's own
     // consumable ids (its consumable_name_* text keys): toys, placeables, props and message items.
     if (gPlaceables.empty()) {
@@ -1567,7 +1568,15 @@ void PropsSection() {
             "bloom_rose_trail", "shout_crab", "shout_jelly", "shout_manta", "shout_aurora_keychain",
             "shout_manatee_keychain", "shout_kizunaaicn", "potion_growth_huge", "potion_growth_tiny",
             "potion_growth_keychain", "potion_recharge_thermo", "resize_potion", "rainbow", "rainbow_handhold",
-            "color_collector", "star_protector", "repellant_krill", "birthdayhat_krill", "peewee"};
+            "color_collector", "star_protector", "repellant_krill", "birthdayhat_krill",
+            "teleport_deer_summon", "teleport_figurine_littleprince", "teleport_figurineskykid_se",
+            "teleport_forest_cave", "teleport_forest_elder", "teleport_forest_elder_tiny", "teleport_forgotten_ark",
+            "teleport_hermit_valley", "teleport_isle_elder", "teleport_manatee_plush", "teleport_nature_turtle",
+            "teleport_oreo", "teleport_prairie_elder", "teleport_prairie_peaks", "teleport_prairie_peaks_bloom",
+            "teleport_prairie_village_bloom", "teleport_prophecy_cave", "teleport_sanctuary_island",
+            "teleport_starlight_desert", "teleport_starlight_desert_beach", "teleport_valley_elder",
+            "teleport_vault_elder", "teleport_wasteland_elder", "teleport_wishing_tree", "teleport_wisteria_tree",
+            "teleport_you_and_i"};
         for (const char* t : kToys) gPlaceables.push_back({t, "", "", 1});
     }
     ImGui::SetNextItemWidth(-1);
@@ -1590,7 +1599,7 @@ void PropsSection() {
                 const DefItem& d = gPlaceables[gPlaceRows[i]];
                 std::string label = d.type.empty() ? d.name : d.name + "  (" + d.type + ")";
                 if (IconRow(d.icon, label, d.name.c_str()))
-                    StartEvent("Toy " + d.name, "", "TriggerToyEvent",
+                    StartEvent("Spell preview ready: " + d.name + " (activate a spell to use it)", "", "TriggerToyEvent",
                                {{"consumableName", Quote(d.name), ""}, {"persistent", "false", ""}});
             }
     }
