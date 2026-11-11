@@ -295,6 +295,7 @@ bool OneShot(const char* type) {
         "OpenDanceMenu", "SocialMessageStones", "SocialRandomGame", "SocialFireworksMenu", "SetLocalAudienceJelly", "DisplayText", "DisplayTitleCard", "HubbaBubbaZone", "MusicalMoteTarget", "HomeDirectoryButton",
         "AvatarSetZeroG", "AvatarSing", "AvatarSetHusk", "AvatarSetMamaGooseMode", "FlyingBroom", "AvatarScoopWater", "AvatarPourWater", "AvatarDiveUp", "AvatarWarpYToOceanSurface", "AvatarNavigateTo", "EmoteShoutPrompt", "SingingLight", "AvatarDetachFromLeader", "CameraTakeOutTripodMode", "NpcSetPhotoMode", "ClosePhotoMode", "SocialTakeScreenshot", "OnScreenCameraButton",
         "SetHeadMesh", "DisableCloudPhysics", "Snowboard", "SnowBallMittens", "DailyLightRefreshFx", "CapeUpgradeFx", "LevelUpFx", "ExplosionFx", "OpenInstrumentMenu", "SetMusicVolume", "MusicallyReactiveClothing", "Arpeggiator",
+        "SocialSitDown", "SocialAttitude", "SocialDance", "SocialMuscle", "SocialHide", "SocialSeek", "SocialLargeShout", "SocialSparkler", "SocialSurprise", "SocialSignalFlags", "SocialShowPresence", "SocialPickRadish", "SocialCandle", "SocialChat", "SocialDarkHornBlast", "SocialGrapplingHookLaunch", "SocialToggleAntlerHelmOrb", "SocialGoHome", "HideRemotePlayers", "ClearChatBubbles",
         "SetCameraShake", "AvatarGrindToPos", "AvatarOverrideCapeLevel", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
@@ -2486,6 +2487,37 @@ void MoreMusicSection() {
     }
 }
 
+// 0.33.0: social & multiplayer actions from the game type list. The Social* events are the social menu's own
+// buttons (no settings); only the ones for yourself are here: the pair actions (hand hold, carry, arm wrestle, link,
+// king hug, seek-find, emote) act on the player picked in that menu and may crash without one.
+void SocialActionsSection() {
+    Section("SOCIAL ACTIONS (experimental)", "The social menu's own buttons for yourself, without opening the menu. "
+                                             "Some may do nothing outside the places the game offers them.");
+    struct Btn { const char* label; const char* type; };
+    static const Btn kSolo[] = {
+        {"Sit down", "SocialSitDown"},         {"Attitude", "SocialAttitude"},       {"Dance", "SocialDance"},
+        {"Muscle", "SocialMuscle"},            {"Hide", "SocialHide"},               {"Seek", "SocialSeek"},
+        {"Large shout", "SocialLargeShout"},   {"Sparkler", "SocialSparkler"},       {"Surprise", "SocialSurprise"},
+        {"Signal flags", "SocialSignalFlags"}, {"Show presence", "SocialShowPresence"}, {"Pick radish", "SocialPickRadish"},
+        {"Candle", "SocialCandle"},            {"Chat", "SocialChat"},               {"Dark horn blast", "SocialDarkHornBlast"},
+        {"Grappling hook", "SocialGrapplingHookLaunch"}, {"Antler helm orb", "SocialToggleAntlerHelmOrb"},
+        {"Go home", "SocialGoHome"},
+    };
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kSolo); i++) {
+        if (i % 3) ImGui::SameLine();
+        ImGui::PushID(i);
+        if (ImGui::Button(kSolo[i].label, ImVec2(bw, 0))) StartEvent(std::string("Social: ") + kSolo[i].label, "", kSolo[i].type, {});
+        ImGui::PopID();
+    }
+    Dim("Go home takes you to your home level (a level change).");
+    float hw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    if (ImGui::Button("Hide other players", ImVec2(hw, 0))) StartEvent("Other players hidden", "", "HideRemotePlayers", {});
+    ImGui::SameLine();
+    if (ImGui::Button("Clear chat bubbles", ImVec2(hw, 0))) StartEvent("Chat bubbles cleared", "", "ClearChatBubbles", {});
+    Dim("Hide other players: the game's HideRemotePlayers for the whole level, on your screen, until you change level.");
+}
+
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
     if (Toggle("No collision", &F.noCollision,
@@ -3944,7 +3976,7 @@ void FeaturesTab() {
             case 7: CameraSection(); CameraAbilitiesSection(); break;
             case 8: WorldSection(); break;
             case 9: TeleportSection(); break;
-            case 10: SocialSection(); SocialExtrasSection(); break;
+            case 10: SocialSection(); SocialExtrasSection(); SocialActionsSection(); break;
             case 11: ShoutSection(); AudienceReactSection(); break;
             case 12: SkySection(); ScreenTextSection(); MoreVisualsSection(); SwitchesSection(); CodeSwitchesSection(); break;
             case 13: SpawnTab(); WorldSpawnsSection(); CreatureControlsSection(); break;
