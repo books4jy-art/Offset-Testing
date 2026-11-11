@@ -878,6 +878,25 @@ void PlayerMoreMovement();
 void PlayerPoseLook();
 void PlayerConvenience();
 
+// 0.30.0: TheVoid's player values. Gravity flag 0x2FF4764 (1 normally; the movement code at 0x22B4D10 applies one
+// velocity step only while it's set); base run speed 0x2FF47A4 (3.5, read at 0x22B19C4).
+void TheVoidPlayerSection() {
+    Section("MORE MOVEMENT (game values)", "TheVoid's player values. Off / Reset puts the game's value back.");
+    static bool noGravity = false;
+    if (Toggle("No gravity (TheVoid's switch, experimental)", &noGravity,
+               "Clears the flag TheVoid calls no-gravity (0x2FF4764). In 0.35.2 the movement code then adds its own "
+               "position step each frame; what that feels like in game isn't confirmed."))
+        if (!SetSwitch("No gravity", 0x2FF4764, !noGravity)) noGravity = !noGravity;
+    static float run = 3.5f;
+    ImGui::TextUnformatted("Base run speed");
+    if (Slider("baserun", &run, 0.5f, 30.f, 3.5f, "%.2f")) {
+        float cur = 0;
+        if (GameBase() && ReadMemory(GameBase() + 0x2FF47A4, &cur, 4) && std::isfinite(cur) && cur > 0.f && cur < 1000.f)
+            WriteGameMemory(0x2FF47A4, &run, 4), Log("Base run speed %.2f", run);
+        else Log("Base run speed: the value doesn't look right; not changed");
+    }
+}
+
 void PlayerSection(bool inWorld) {
     Section("MOVEMENT", nullptr);
     ImGui::TextUnformatted("Player hover");
@@ -1194,6 +1213,13 @@ void OutfitsSection() {
             "prop isn't there yet, tap Hold prop now.");
     }
 
+    // 0.30.0: TheVoid's unnamed avatar entry (0x3139858): the outfit-piece lookups (0x1252E64, 0x1259934...) use a
+    // substitute outfit in some level/event modes unless this is set; set, they always use your own pieces.
+    static bool ownOutfit = false;
+    if (Toggle("Always show my own outfit (experimental)", &ownOutfit,
+               "Where a level or event dresses you in something else, your own outfit stays (on your screen)."))
+        if (!SetSwitch("Always own outfit", 0x3139858, ownOutfit)) ownOutfit = !ownOutfit;
+
     Section("EDIT OUTFITS", "Your avatar's height and size (TheVoid's height/scale values; the game holds them to "
                             "-3..3). Reset = 0.");
     if (Slider("height", &M.height, -3.f, 3.f, 0.f, "height %.2f")) SetFloatVar("Avatar height", kAvatarHeight, M.height);
@@ -1403,6 +1429,12 @@ const EnvVar kEnv[] = {
     {"Fog height", 0x2DFFBE4, 0.f, 2.f, 0.1f, false},    {"Fog brightness", 0x2DFFBD4, 0.f, 2.f, 0.8f, false},
     {"Atmosphere density", 0x2DFFBE0, 0.f, 4.f, 1.f, false},
     {"Point light (unverified)", 0x2DFFC04, 0.f, 4.f, 1.f, false},
+    // 0.30.0 (TheVoid's unnamed entries; read by the fog-distance code at 0xFA2128): where fog starts, the furthest
+    // distance it uses (capped at 256000 there), and the height it's measured from; the falloff is an override value.
+    {"Fog start distance", 0x2DFFBCC, 0.f, 1000.f, 40.f, false},
+    {"Fog max distance", 0x2DFFBD0, 100.f, 50000.f, 4000.f, false},
+    {"Fog base height", 0x2DFFBD8, -200.f, 1000.f, 0.5f, false},
+    {"Fog height falloff (override)", 0x30B00B4, 0.f, 1.f, 0.f, true},
 };
 constexpr uint32_t kEnvOverride = 0x30B00A8;
 float gEnv[IM_ARRAYSIZE(kEnv)];
@@ -1443,6 +1475,13 @@ void SkySection() {
         int r = Slider(kEnv[i].label, &gEnv[i], kEnv[i].lo, kEnv[i].hi, kEnv[i].def,
                        kEnv[i].hi > 1000 ? "%.0f" : "%.2f");
         if (r) EnvWrite(kEnv[i], gEnv[i]);
+    }
+    // 0.30.0: the override block's fog switch (0x30B00AC): the fog-distance code at 0xFA2124 only runs while it's set
+    static bool heightFog = false;
+    if (Toggle("Height fog (override)", &heightFog,
+               "The environment override's fog-by-distance switch (TheVoid's unnamed entry). Turns the override on.")) {
+        if (heightFog) SetSwitch("Environment override", kEnvOverride, true);
+        if (!SetSwitch("Height fog", 0x30B00AC, heightFog)) heightFog = !heightFog;
     }
     if (ImGui::Button("Reset all environment")) {
         for (int i = 0; i < (int)IM_ARRAYSIZE(kEnv); i++) gEnv[i] = kEnv[i].def, EnvWrite(kEnv[i], kEnv[i].def);
@@ -1953,6 +1992,13 @@ GameSwitch gWorldSw[] = {
     {"Disable gates", 0x316CA34, 0, "Gates and doors don't block you.", false},
     {"Disable level-change events", 0x315D0C0, 0, "", false},
     {"Camera snap off", 0x300B89C, 1, "The camera doesn't snap back behind you.", false},
+    // 0.30.0, from TheVoid's table (0.35.2 uses checked in the game code):
+    {"Skip cutscenes", 0x34A8B30, 0, "The game's kAutoSkipAllTimelines switch: cutscenes are skipped.", false},
+    {"Motion blur off", 0x2F61D20, 1, "The screen-effects pass that uses u_disableMeshMotion/u_windPattern.", false},
+    {"Radial blur off (experimental)", 0x2F61D21, 1, "The MotionBlur pass's own switch (u_radialBoostBlur).", false},
+    {"Disable multiplayer (experimental)", 0x2FC1318, 1,
+     "TheVoid's social.disable_multiplayer: one of the game's network sends is skipped. Others may stop seeing your "
+     "moves; switch it off if the game misbehaves.", false},
 };
 GameSwitch gRadarSw[] = {
     {"Show spirit locations", 0x3155250, 0, "", false}, {"Shrine radar", 0x34D54D0, 0, "", false},
@@ -1964,10 +2010,14 @@ GameSwitch gRadarSw[] = {
 GameSwitch gFunSw[] = {
     {"Rainbow glow", 0x3450C88, 0, "", false},          {"Fast candle burn", 0x317658C, 0, "", false},
     {"Tame dark creatures", 0x3175224, 0, "", false},
+    {"Place anywhere", 0x3512CE0, 0,
+     "TheVoid's placeable-anywhere flag: forces the placement code's per-item free-placement setting on.", false},
 };
 GameSwitch gDebugSw[] = {
     {"Pause UI animations", 0x34A6B24, 0, "", false},   {"Show UI hierarchy", 0x34A6B2C, 0, "", false},
     {"TV debug UI", 0x309F510, 0, "", false},           {"Dye debug", 0x31850E0, 0, "", false},
+    {"Particle flag (unidentified)", 0x341ADD0, 0,
+     "TheVoid's unnamed particle entry: skips one call in the particle bounds code (0x1BC95F8).", false},
 };
 
 bool SetByte(const char* what, uint32_t at, uint8_t v) {
@@ -3044,6 +3094,13 @@ void SocialSection() {
     if (SO.tree) Dim("Reporting level %d.", SO.treeLevels);
     Dim("Also sets the game's \"enable all relationship abilities\" switch (0x3455E25, as TSM does), so abilities "
         "aren't asked for with candles first.");
+    // 0.30.0: TheVoid sets this one together with 0x3455E25. The friendship tree code (0x24F0898) treats a node past
+    // the unlocked count as locked only while it's 0.
+    static bool allNodes = false;
+    if (Toggle("Show every friendship node unlocked (experimental)", &allNodes,
+               "TheVoid's second friendship switch (0x34B4600): the tree treats nodes past your level as unlocked on "
+               "your screen. The server still decides what you can use."))
+        if (!SetSwitch("All friendship nodes", 0x34B4600, allNodes)) allNodes = !allNodes;
 
     Section("OTHER", nullptr);
     if (Toggle("Audience mode (experimental)", &X.audience,
@@ -3194,6 +3251,46 @@ void Stance(const char* label, const char* state, int index, bool sit, bool slee
                 {"stand", stand ? "true" : "false", ""}, {"instant", "true", ""}, {"fireOnce", "true", ""}});
 }
 
+// 0.30.0 from TheVoid's table. Dark-stone value: a loop over players (0x15BB0B8) copies each player's float at +0x248
+// into the list the dark-stone code uses (DarkStoneNoBake); TheVoid replaces the three loads with one of its values
+// (fmov s0 #5 / #20 / #-10, its patch strings).
+const uint32_t kDarkStoneAt[3] = {0x15BB0C0, 0x15BB134, 0x15BB1AC};
+const uint32_t kDarkStoneOrig[3] = {0xBD424920u /* ldr s0, [x9, #0x248] */, 0xBD424940u /* ldr s0, [x10, #0x248] */,
+                                    0xBD424940u};
+const uint32_t kDarkStoneVal[4] = {0, 0x1E229000u /* fmov s0, #5.0 */, 0x1E269000u /* fmov s0, #20.0 */,
+                                   0x1E349000u /* fmov s0, #-10.0 */};
+bool SetDarkStone(int choice) {
+    uint32_t cur[3];
+    for (int i = 0; i < 3; i++) {
+        bool known = GameBase() && ReadMemory(GameBase() + kDarkStoneAt[i], &cur[i], 4);
+        if (known) {
+            known = cur[i] == kDarkStoneOrig[i];
+            for (int k = 1; k < 4; k++) known |= cur[i] == kDarkStoneVal[k];
+        }
+        if (!known) {
+            Log("Dark-stone value: the game code at 0x%X isn't what 0.35.2 has; not changed", kDarkStoneAt[i]);
+            return false;
+        }
+    }
+    for (int i = 0; i < 3; i++) {
+        uint32_t v = choice ? kDarkStoneVal[choice] : kDarkStoneOrig[i];
+        if (cur[i] != v && !WriteGameMemory(kDarkStoneAt[i], &v, 4)) {
+            Log("Dark-stone value: write failed");
+            return false;
+        }
+    }
+    return true;
+}
+
+// Avatar flair timers (AvatarFlair.cpp, 0x121D284): per-frame counters that count down while nonzero. TheVoid patches
+// the "skip if zero" test of eight of them (each its own entry); with the test gone (a NOP) the counter wraps to 255
+// and keeps counting, so whatever it times stays on. Which effect each one times isn't known yet.
+struct FlairTimer { uint32_t at; const char* field; };
+const FlairTimer kFlair[8] = {{0x121D360, "+0x3C0"}, {0x121D3A0, "+0x3C6"}, {0x121D3E8, "+0x3C8"},
+                              {0x121D3F8, "+0x3C7"}, {0x121D408, "+0x3C4"}, {0x121D418, "+0x3C5"},
+                              {0x121D428, "+0x550"}, {0x121D438, "+0x551"}};
+constexpr uint32_t kFlairCbz = 0x34000069;  // cbz w9, +0xC (the same word at all eight)
+
 void PatchToggle(const char* label, bool* on, const CodePatch& p, const char* help) {
     if (Toggle(label, on, help)) {
         if (!SetCodePatch(p, *on)) *on = !*on;
@@ -3208,8 +3305,30 @@ void CodeSwitchesSection() {
                 "Dark creatures stop moving (their update is skipped). Off: the game's code put back.");
     PatchToggle("Birthday-hat krill", &bdayKrill, kBirthdayKrillPatch,
                 "Krill wear their birthday hat. New krill (or an area change) may be needed. Off: code put back.");
+    static int darkStone = 0;
+    static const char* kDark[] = {"Normal", "5", "20", "-10"};
+    ImGui::TextUnformatted("Player value seen by dark stones (experimental)");
+    for (int i = 0; i < 4; i++) {
+        if (i) ImGui::SameLine();
+        if (ImGui::RadioButton(kDark[i], darkStone == i) && darkStone != i && SetDarkStone(i)) {
+            darkStone = i;
+            Log("Dark-stone value: %s", kDark[i]);
+        }
+    }
+    Dim("TheVoid's three-site patch: the per-player value the dark-stone code reads is replaced with 5, 20 or -10 "
+        "(TheVoid's own values). What it changes in game isn't confirmed; Normal puts the code back.");
     PatchToggle("Disable wind walls", &windWall, kWindWallPatch,
                 "Wind walls don't push you back. Off: the game's code put back.");
+    Section("AVATAR FLAIR TIMERS (unidentified)", "TheVoid's eight flair entries: each keeps one of your avatar's flair "
+                                                   "effect timers running. Which effect each one is isn't known yet: "
+                                                   "try them one at a time and see. Off: the game's code put back.");
+    static bool flairOn[8] = {};
+    for (int i = 0; i < 8; i++) {
+        char label[48];
+        snprintf(label, sizeof label, "Flair timer %d (%s)", i + 1, kFlair[i].field);
+        const CodePatch p = {"Flair timer", kFlair[i].at, kFlairCbz, kNop};
+        PatchToggle(label, &flairOn[i], p, "");
+    }
 }
 
 void PlayerMoreMovement() {
@@ -3558,7 +3677,7 @@ void FeaturesTab() {
     ImGui::Separator();
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
         switch (gSub) {
-            case 0: PlayerSection(inWorld); ReflectionSection(); break;
+            case 0: PlayerSection(inWorld); TheVoidPlayerSection(); ReflectionSection(); break;
             case 1: EnergySection(); break;
             case 2: TransformSection(); ModesSection(); break;
             case 3: OutfitsSection(); break;
@@ -3600,8 +3719,8 @@ char gVoidFilter[64] = "";
 
 void OtherOffsetsTab() {
     Dim("TheVoid 0.1.2's feature table (Apache-2.0, by Soyu): its names and Sky 0.35.1 addresses, ported to 0.35.2 "
-        "by matching the game code that uses each one. Most aren't used by a feature yet; they're kept here so you "
-        "can look at them (Memory) or watch code addresses (Native).");
+        "by matching the game code that uses each one. The last column names the feature using each entry (0.30.0), or "
+        "why it was left out (rewards and server actions, or a port that couldn't be confirmed).");
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##vf", "search", gVoidFilter, sizeof gVoidFilter);
     if (ImGui::BeginTable("##void", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY |
