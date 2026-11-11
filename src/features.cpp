@@ -293,6 +293,7 @@ bool OneShot(const char* type) {
         "CameraPhotoFlash", "StopAvatarAnimSeq", "AvatarSetStance", "AvatarPauseAnim", "KillLocalAvatar",
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
         "OpenDanceMenu", "SocialMessageStones", "SocialRandomGame", "SocialFireworksMenu", "SetLocalAudienceJelly", "DisplayText", "DisplayTitleCard", "HubbaBubbaZone", "MusicalMoteTarget", "HomeDirectoryButton",
+        "AvatarSetZeroG", "AvatarSing", "AvatarSetHusk", "AvatarSetMamaGooseMode", "FlyingBroom", "AvatarScoopWater", "AvatarPourWater", "AvatarDiveUp", "AvatarWarpYToOceanSurface", "AvatarNavigateTo", "EmoteShoutPrompt", "SingingLight", "AvatarDetachFromLeader", "CameraTakeOutTripodMode", "NpcSetPhotoMode", "ClosePhotoMode", "SocialTakeScreenshot", "OnScreenCameraButton",
         "SetCameraShake", "AvatarGrindToPos", "AvatarOverrideCapeLevel", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
@@ -2233,6 +2234,143 @@ void WorldSpawnsSection() {
         "button that opens the nest list.");
 }
 
+// ---------------------------------------------------------------- 0.31.0: abilities from the game type list
+// Avatar & movement and Camera & photo events from game_types_reference_0.35.2.md that a player can use. Setting
+// names are the game's own (its type table); all are one-shot (no handle kept), so a state they set lasts until it's
+// set again or the level changes.
+struct AvatarAbilityState {
+    float zeroG = 1.f, husk = 0.f, dive = 2.f, walkSpeed = 4.f;
+    bool spot = false;
+    bool airBubble = true, rainbow = false;
+    float lightSize = 6.f, lightBright = 1.f, lightColor[3] = {1.f, 0.73f, 0.48f};
+} AA;
+
+void AvatarAbilitiesSection() {
+    Section("AVATAR ABILITIES", "The game's own avatar events (from the game type list). Each one plays once; what it "
+                                "changes lasts until it's changed again or you change level.");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    struct Btn { const char* label; const char* type; };
+    static const Btn kOnce[] = {{"Sing", "AvatarSing"},
+                                {"Mama goose mode", "AvatarSetMamaGooseMode"},
+                                {"Flying broom", "FlyingBroom"},
+                                {"Scoop water", "AvatarScoopWater"},
+                                {"Pour water", "AvatarPourWater"},
+                                {"Up to the ocean surface", "AvatarWarpYToOceanSurface"},
+                                {"Let go of your leader", "AvatarDetachFromLeader"}};
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kOnce); i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kOnce[i].label, ImVec2(bw, 0))) StartEvent(kOnce[i].label, "", kOnce[i].type, {});
+    }
+    Dim("Scoop / pour water use the game's bucket actions (a bucket prop may be needed). Ocean surface: only where "
+        "there's ocean.");
+
+    ImGui::TextUnformatted("Zero gravity (energy charge)");
+    Slider("zerog", &AA.zeroG, 0.f, 5.f, 1.f, "%.2f");
+    if (ImGui::Button("Zero gravity", ImVec2(bw, 0)))
+        StartEvent("Zero gravity", "", "AvatarSetZeroG", {{"energyCharge", Num(AA.zeroG), ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Dive up", ImVec2(bw, 0)))
+        StartEvent("Dive up", "", "AvatarDiveUp", {{"duration", Num(AA.dive), ""}});
+    Dim("Zero gravity lasts until you change level. Dive up: an upward dive for the time below.");
+    Slider("diveup", &AA.dive, 0.5f, 10.f, 2.f, "dive %.1f s");
+
+    ImGui::TextUnformatted("Husk (dark shell look; 0 = normal)");
+    if (Slider("husk", &AA.husk, 0.f, 1.f, 0.f, "%.2f"))
+        StartEvent("Husk " + Num(AA.husk), "", "AvatarSetHusk", {{"amount", Num(AA.husk), ""}});
+
+    ImGui::TextUnformatted("Shout prompt (the reaction bubble over you)");
+    static const char* kShout[] = {"Heart", "Shocked", "Touched", "Light"};
+    static const char* kShoutIds[] = {"kEmoteShoutType_Heart", "kEmoteShoutType_Shock", "kEmoteShoutType_Touched",
+                                      "kEmoteShoutType_Light"};
+    float qw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 3) / 4;
+    for (int i = 0; i < 4; i++) {
+        if (i) ImGui::SameLine();
+        ImGui::PushID(i);
+        // type 0 (Default) left out, as for audience reactions: the shout tables are read at type - 1
+        if (ImGui::Button(kShout[i], ImVec2(qw, 0)))
+            StartEvent(std::string("Shout prompt ") + kShout[i], "", "EmoteShoutPrompt",
+                       {{"shoutType", Quote(kShoutIds[i]), std::to_string(i + 1)}});
+        ImGui::PopID();
+    }
+
+    Section("WALK BACK HERE", "Mark a spot, then your avatar walks back to it by itself (AvatarNavigateTo, the "
+                              "game's path finding). The mark is gone after a level change.");
+    if (ImGui::Button("Mark this spot", ImVec2(bw, 0))) {
+        std::string m;
+        if (MarkerHere("Mark this spot", 0.f, m) &&
+            Run("Spot marked", std::string(kPrelude) + "do\n" + m + "OffsetLab.walkSpot = m\nend\n", "walkspot"))
+            AA.spot = true;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!AA.spot);
+    if (ImGui::Button("Walk back to it", ImVec2(bw, 0))) {
+        std::string ev = EventLua("", "AvatarNavigateTo",
+                                  {{"goal", "OffsetLab.walkSpot", ""}, {"speed", Num(AA.walkSpeed), ""},
+                                   {"acceleration", "8", ""}, {"closeEnoughRange", "1.5", ""},
+                                   {"stopPreviousAnim", "true", ""}});
+        if (!ev.empty())
+            Run("Walking back to the marked spot",
+                std::string(kPrelude) + "if not OffsetLab.walkSpot then error(\"mark a spot first (marks are cleared "
+                                        "on a level change)\") end\n" + ev,
+                "once:AvatarNavigateTo");
+    }
+    ImGui::EndDisabled();
+    Slider("walkbackspeed", &AA.walkSpeed, 1.f, 15.f, 4.f, "speed %.1f");
+
+    Section("SINGING LIGHT", "The game's singing light where you stand: a light in a bubble that pulses to the music. "
+                             "Air bubble: inside it you walk underwater with endless breath (the game's own option).");
+    ImGui::Checkbox("Air bubble", &AA.airBubble);
+    ImGui::SameLine();
+    ImGui::Checkbox("Rainbow bubble", &AA.rainbow);
+    Slider("lightsize", &AA.lightSize, 1.f, 40.f, 6.f, "bubble size %.1f");
+    Slider("lightbright", &AA.lightBright, 0.f, 5.f, 1.f, "brightness %.2f");
+    ImGui::ColorEdit3("Light colour", AA.lightColor);
+    if (ImGui::Button("Place singing light", ImVec2(bw, 0))) {
+        std::string m;
+        if (MarkerHere("Singing light", 1.f, m, AA.lightSize)) {
+            char c[96];
+            snprintf(c, sizeof c, "{%.3f, %.3f, %.3f}", AA.lightColor[0], AA.lightColor[1], AA.lightColor[2]);
+            StartWithMarker("Singing light", "SingingLight", m,
+                            {{"marker", "OffsetLab.lastMark", ""}, {"animateToMusic", "true", ""},
+                             {"showMysticalSphere", "true", ""}, {"isAirBubble", AA.airBubble ? "true" : "false", ""},
+                             {"toggleMusicPauseOnSphere", "false", ""},
+                             {"sphereType", AA.rainbow ? "\"kMysticalSphereType_Rainbow\"" : "\"kMysticalSphereType_Standard\"",
+                              AA.rainbow ? "1" : "0"},
+                             {"pointLightIntensity", Num(AA.lightBright), ""}, {"flareColor", c, ""}});
+        }
+    }
+    Dim("Stays until you change level.");
+}
+
+void CameraAbilitiesSection() {
+    Section("PHOTO & CAMERA ABILITIES", "The game's own photo events (from the game type list).");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    static const char* kModes[] = {"Held camera", "First person", "Selfie", "Tripod view"};
+    static const char* kModeIds[] = {"kPhotoPictureMode_Held", "kPhotoPictureMode_FirstPerson",
+                                     "kPhotoPictureMode_Selfie", "kPhotoPictureMode_Tripod"};
+    for (int i = 0; i < 4; i++) {
+        if (i % 2) ImGui::SameLine();
+        if (ImGui::Button(kModes[i], ImVec2(bw, 0)))
+            StartEvent(std::string("Photo mode: ") + kModes[i], "", "NpcSetPhotoMode",
+                       {{"pictureMode", Quote(kModeIds[i]), std::to_string(i)}});
+    }
+    Dim("Photo views for your avatar (NpcSetPhotoMode with no NPC). Open the camera first if nothing changes.");
+    if (ImGui::Button("Tripod camera here", ImVec2(bw, 0))) {
+        std::string m;
+        if (MarkerHere("Tripod camera", 2.f, m))
+            StartWithMarker("Tripod camera", "CameraTakeOutTripodMode", m,
+                            {{"cameraPos", "OffsetLab.lastMark", ""}, {"defaultFovSliderVal", "0.5", ""},
+                             {"defaultExposureSliderVal", "0.5", ""}, {"defaultDofSliderVal", "0.5", ""}});
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close photo mode", ImVec2(bw, 0))) StartEvent("Close photo mode", "", "ClosePhotoMode", {});
+    if (ImGui::Button("Take screenshot", ImVec2(bw, 0))) StartEvent("Screenshot", "", "SocialTakeScreenshot", {});
+    ImGui::SameLine();
+    if (ImGui::Button("Camera button on screen", ImVec2(bw, 0)))
+        StartEvent("Camera button", "", "OnScreenCameraButton", {{"enableEmotes", "true", ""}});
+    Dim("Tripod camera: the game's tripod photo mode with its camera set where you stand.");
+}
+
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
     if (Toggle("No collision", &F.noCollision,
@@ -3677,14 +3815,14 @@ void FeaturesTab() {
     ImGui::Separator();
     if (ImGui::BeginChild("##features", ImVec2(0, 0), ImGuiChildFlags_None)) {
         switch (gSub) {
-            case 0: PlayerSection(inWorld); TheVoidPlayerSection(); ReflectionSection(); break;
+            case 0: PlayerSection(inWorld); TheVoidPlayerSection(); AvatarAbilitiesSection(); ReflectionSection(); break;
             case 1: EnergySection(); break;
             case 2: TransformSection(); ModesSection(); break;
             case 3: OutfitsSection(); break;
             case 4: ItemsSection(); PlaceablesSection(); EffectsSection(); break;
             case 5: SpellsTab(); break;
             case 6: EmotesSection(); break;
-            case 7: CameraSection(); break;
+            case 7: CameraSection(); CameraAbilitiesSection(); break;
             case 8: WorldSection(); break;
             case 9: TeleportSection(); break;
             case 10: SocialSection(); SocialExtrasSection(); break;
