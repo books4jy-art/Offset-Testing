@@ -296,6 +296,7 @@ bool OneShot(const char* type) {
         "AvatarSetZeroG", "AvatarSing", "AvatarSetHusk", "AvatarSetMamaGooseMode", "FlyingBroom", "AvatarScoopWater", "AvatarPourWater", "AvatarDiveUp", "AvatarWarpYToOceanSurface", "AvatarNavigateTo", "EmoteShoutPrompt", "SingingLight", "AvatarDetachFromLeader", "CameraTakeOutTripodMode", "NpcSetPhotoMode", "ClosePhotoMode", "SocialTakeScreenshot", "OnScreenCameraButton",
         "SetHeadMesh", "DisableCloudPhysics", "Snowboard", "SnowBallMittens", "DailyLightRefreshFx", "CapeUpgradeFx", "LevelUpFx", "ExplosionFx", "OpenInstrumentMenu", "SetMusicVolume", "MusicallyReactiveClothing", "Arpeggiator",
         "SocialSitDown", "SocialAttitude", "SocialDance", "SocialMuscle", "SocialHide", "SocialSeek", "SocialLargeShout", "SocialSparkler", "SocialSurprise", "SocialSignalFlags", "SocialShowPresence", "SocialPickRadish", "SocialCandle", "SocialChat", "SocialDarkHornBlast", "SocialGrapplingHookLaunch", "SocialToggleAntlerHelmOrb", "SocialGoHome", "HideRemotePlayers", "ClearChatBubbles",
+        "CatCurseBuff", "ChibiFormBuff", "OreoFormBuff", "RabbitFormBuff", "DarkCreatureFormBuff", "ChibiOutfit", "MischiefWand", "MeteorFall", "Popcorn", "FortuneDrum", "FortuneFan", "FortunePony", "MarshmallowStick", "JenovaFan", "BouncyBalloon", "Kaleidojam", "BallPit", "DarkCreaturesLeave", "SetDefangedDarkCreature", "MoteCarryAvatar", "ChangeLevelToHome", "Npc_SetScale", "ShowHUDTimed", "OpenConstellationMenu", "SocialOpenConstellationFriendMenu", "OpenRelationshipMenu", "OpenSocialMenu", "UiInboxMenu", "SocialPropMenu", "SocialToysMenu", "OpenDyeMenu", "ForceMinimalHUD", "HideBubbleButtons", "UIQuestBanner",
         "SetCameraShake", "AvatarGrindToPos", "AvatarOverrideCapeLevel", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
@@ -1969,6 +1970,13 @@ void MenusSection() {
         {"Grappling hook", "SocialGrapplingHookMenu"}, {"Recorder", "SocialRecorderMenu"},
         {"Notes", "OpenNoteMenu"},                   {"Next note", "OpenNextVisualNoteMenu"},
         {"Dye crafting", "OpenCraftingMenu"},
+        // 0.34.0, from the game type list
+        {"Constellations", "OpenConstellationMenu"}, {"Constellation friends", "SocialOpenConstellationFriendMenu"},
+        {"Relationship menu", "OpenRelationshipMenu"}, {"Social menu (other)", "OpenSocialMenu"},
+        {"Inbox", "UiInboxMenu"},                    {"Prop menu", "SocialPropMenu"},
+        {"Spell menu", "SocialToysMenu"},            {"Dye menu", "OpenDyeMenu"},
+        {"Minimal HUD", "ForceMinimalHUD"},          {"Hide bubble buttons", "HideBubbleButtons"},
+        {"Quest banner", "UIQuestBanner"},
     };
     for (int i = 0; i < (int)IM_ARRAYSIZE(kMenus); i++) {
         if (i % 2) ImGui::SameLine();
@@ -2516,6 +2524,142 @@ void SocialActionsSection() {
     ImGui::SameLine();
     if (ImGui::Button("Clear chat bubbles", ImVec2(hw, 0))) StartEvent("Chat bubbles cleared", "", "ClearChatBubbles", {});
     Dim("Hide other players: the game's HideRemotePlayers for the whole level, on your screen, until you change level.");
+}
+
+// 0.34.0: the rest of the player-usable events in the game type list (levels, creatures, props, forms, menus).
+// All one-shot, game setting names.
+void FormsSection() {
+    Section("FORMS (game buff events)", "The game's form buffs from the game type list. They last as the game's buff "
+                                        "does; a level change ends them.");
+    struct Btn { const char* label; const char* type; };
+    static const Btn kForms[] = {{"Cat", "CatCurseBuff"},       {"Chibi", "ChibiFormBuff"}, {"Oreo", "OreoFormBuff"},
+                                 {"Rabbit", "RabbitFormBuff"},  {"Krill", "DarkCreatureFormBuff"},
+                                 {"Chibi outfit", "ChibiOutfit"}};
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kForms); i++) {
+        if (i % 3) ImGui::SameLine();
+        ImGui::PushID(i);
+        if (ImGui::Button(kForms[i].label, ImVec2(bw, 0))) StartEvent(std::string("Form: ") + kForms[i].label, "", kForms[i].type, {});
+        ImGui::PopID();
+    }
+}
+
+void MorePropsSection() {
+    Section("MORE PROPS (game events)", "Prop and toy events from the game type list. Some only work where the game "
+                                        "uses them (e.g. during their season).");
+    struct Btn { const char* label; const char* type; };
+    static const Btn kProps[] = {{"Mischief wand", "MischiefWand"}, {"Meteor fall", "MeteorFall"},
+                                 {"Popcorn", "Popcorn"},            {"Fortune drum", "FortuneDrum"},
+                                 {"Fortune fan", "FortuneFan"},     {"Fortune pony", "FortunePony"},
+                                 {"Marshmallow stick", "MarshmallowStick"}, {"Jenova fan", "JenovaFan"}};
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    for (int i = 0; i < (int)IM_ARRAYSIZE(kProps); i++) {
+        if (i % 2) ImGui::SameLine();
+        ImGui::PushID(i);
+        if (ImGui::Button(kProps[i].label, ImVec2(bw, 0))) StartEvent(kProps[i].label, "", kProps[i].type, {});
+        ImGui::PopID();
+    }
+}
+
+struct MoreSpawnState { float balloonCharge = 0.5f, size = 3.f, moteTime = 3.f; } MS;
+
+// A 4x4 transform table (Lua) at your position, scaled; "" when your position can't be read.
+std::string TransformHere(const char* what, float scale) {
+    float p[3];
+    if (!LocalAvatarPos(p)) {
+        Log("%s: your position couldn't be read", what);
+        return std::string();
+    }
+    char t[256];
+    snprintf(t, sizeof t, "{{%.2f, 0, 0, 0}, {0, %.2f, 0, 0}, {0, 0, %.2f, 0}, {%.3f, %.3f, %.3f, 1}}", scale, scale,
+             scale, p[0], p[1], p[2]);
+    return t;
+}
+
+void MoreSpawnsSection() {
+    Section("MORE SPAWNS & CREATURES", "From the game type list. Placed things stay until you change level.");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    Slider("spawnsize", &MS.size, 0.5f, 20.f, 3.f, "size %.1f");
+    if (ImGui::Button("Bouncy balloon", ImVec2(bw, 0))) {
+        std::string t = TransformHere("Bouncy balloon", MS.size);
+        if (!t.empty())
+            StartEvent("Bouncy balloon", "", "BouncyBalloon",
+                       {{"transform", t, ""}, {"chargeAmount", Num(MS.balloonCharge), ""}, {"bobDistance", "0.5", ""},
+                        {"playParticleEffectOnBounce", "true", ""}});
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Kaleidojam", ImVec2(bw, 0))) {
+        std::string t = TransformHere("Kaleidojam", MS.size);
+        if (!t.empty()) StartEvent("Kaleidojam", "", "Kaleidojam", {{"transform", t, ""}});
+    }
+    if (ImGui::Button("Ball pit", ImVec2(bw, 0))) {
+        std::string m, t = TransformHere("Ball pit", MS.size);
+        if (!t.empty() && MarkerHere("Ball pit", -0.3f, m, MS.size))
+            StartWithMarker("Ball pit", "BallPit", m, {{"marker", "OffsetLab.lastMark", ""}, {"transform", t, ""}});
+    }
+    Slider("ballooncharge", &MS.balloonCharge, 0.f, 2.f, 0.5f, "balloon charge %.2f");
+    Dim("Bouncy balloon: bounce on it to charge. Kaleidojam and ball pit are experimental.");
+
+    ImGui::TextUnformatted("Krill");
+    if (ImGui::Button("Krill leave", ImVec2(bw, 0))) StartEvent("Krill leave", "", "DarkCreaturesLeave", {});
+    ImGui::SameLine();
+    if (ImGui::Button("Defang krill", ImVec2(bw, 0)))
+        StartEvent("Krill defanged", "", "SetDefangedDarkCreature", {{"defanged", "true", ""}});
+    if (ImGui::Button("Krill back to normal", ImVec2(bw, 0)))
+        StartEvent("Krill back to normal", "", "SetDefangedDarkCreature", {{"defanged", "false", ""}});
+    Dim("Defanged krill can't hurt you (the game's SetDefangedDarkCreature). The krill attack event is left out: being "
+        "hit costs real wing light.");
+
+    ImGui::TextUnformatted("Motes carry you to the spot marked in Player > Walk back here");
+    Slider("motetime", &MS.moteTime, 1.f, 15.f, 3.f, "travel %.1f s");
+    if (ImGui::Button("Motes carry me", ImVec2(bw, 0))) {
+        std::string m;
+        if (MarkerHere("Motes carry me", 0.f, m)) {
+            std::string ev = EventLua("", "MoteCarryAvatar",
+                                      {{"recruitRegion", "OffsetLab.lastMark", ""}, {"carryTo", "OffsetLab.walkSpot", ""},
+                                       {"recruitRadius", "8", ""}, {"travelTime", Num(MS.moteTime), ""},
+                                       {"maxMotes", "16", ""}});
+            if (!ev.empty())
+                Run("Motes carrying you",
+                    std::string(kPrelude) + "if not OffsetLab.walkSpot then error(\"mark a spot first in Player > "
+                                            "Walk back here\") end\ndo\n" + m + "end\n" + ev,
+                    "once:MoteCarryAvatar");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Home level", ImVec2(bw, 0))) StartEvent("To your home level", "", "ChangeLevelToHome", {});
+    Dim("Motes: the game gathers light motes around you to carry you; they may only come where the level has them.");
+}
+
+struct SmoothResizeState { float height = 0.f, scale = 0.f, time = 1.f; } SR;
+
+void SmoothResizeSection() {
+    Section("SMOOTH RESIZE", "The game's Npc_SetScale with no NPC (your avatar): height and size change over time. "
+                             "Experimental; the values use the same -3..3 range as the sliders above.");
+    Slider("srheight", &SR.height, -3.f, 3.f, 0.f, "height %.2f");
+    Slider("srscale", &SR.scale, -3.f, 3.f, 0.f, "size %.2f");
+    Slider("srtime", &SR.time, 0.f, 10.f, 1.f, "over %.1f s");
+    if (ImGui::Button("Resize", ImVec2(Px(250), 0)))
+        StartEvent("Smooth resize", "", "Npc_SetScale",
+                   {{"height", Num(SR.height), ""}, {"scale", Num(SR.scale), ""}, {"time", Num(SR.time), ""}});
+}
+
+struct HudImageState { char tex[64] = "UiMenuSpellFire"; float x = 0.5f, y = 0.5f, scale = 1.f, dur = 3.f; } HI;
+
+void HudImageSection() {
+    Section("SHOW A GAME IMAGE", "Any of the game's UI images on your screen for a while (ShowHUDTimed). Image names "
+                                 "are the game's icon names, e.g. UiMenuSpellFire, UiOutfitPropHarp.");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##hudtex", HI.tex, sizeof HI.tex);
+    Slider("hudx", &HI.x, 0.f, 1.f, 0.5f, "x %.2f");
+    Slider("hudy", &HI.y, 0.f, 1.f, 0.5f, "y %.2f");
+    Slider("hudscale", &HI.scale, 0.1f, 5.f, 1.f, "size %.2f");
+    Slider("huddur", &HI.dur, 0.5f, 30.f, 3.f, "%.1f s");
+    if (ImGui::Button("Show image", ImVec2(Px(250), 0)) && HI.tex[0])
+        StartEvent(std::string("Image ") + HI.tex, "", "ShowHUDTimed",
+                   {{"textureName", Quote(HI.tex), ""}, {"screenPercentX", Num(HI.x), ""},
+                    {"screenPercentY", Num(HI.y), ""}, {"scale", Num(HI.scale), ""}, {"duration", Num(HI.dur), ""},
+                    {"fadeInTime", "0.5", ""}, {"fadeOutTime", "1.0", ""}, {"alphaMult", "1", ""}});
 }
 
 void WorldSection() {
@@ -3968,9 +4112,9 @@ void FeaturesTab() {
         switch (gSub) {
             case 0: PlayerSection(inWorld); TheVoidPlayerSection(); AvatarAbilitiesSection(); ReflectionSection(); break;
             case 1: EnergySection(); break;
-            case 2: TransformSection(); ModesSection(); break;
-            case 3: OutfitsSection(); break;
-            case 4: ItemsSection(); PlaceablesSection(); EffectsSection(); break;
+            case 2: TransformSection(); FormsSection(); ModesSection(); break;
+            case 3: OutfitsSection(); SmoothResizeSection(); break;
+            case 4: ItemsSection(); MorePropsSection(); PlaceablesSection(); EffectsSection(); break;
             case 5: SpellsTab(); break;
             case 6: EmotesSection(); break;
             case 7: CameraSection(); CameraAbilitiesSection(); break;
@@ -3978,8 +4122,8 @@ void FeaturesTab() {
             case 9: TeleportSection(); break;
             case 10: SocialSection(); SocialExtrasSection(); SocialActionsSection(); break;
             case 11: ShoutSection(); AudienceReactSection(); break;
-            case 12: SkySection(); ScreenTextSection(); MoreVisualsSection(); SwitchesSection(); CodeSwitchesSection(); break;
-            case 13: SpawnTab(); WorldSpawnsSection(); CreatureControlsSection(); break;
+            case 12: SkySection(); ScreenTextSection(); HudImageSection(); MoreVisualsSection(); SwitchesSection(); CodeSwitchesSection(); break;
+            case 13: SpawnTab(); WorldSpawnsSection(); MoreSpawnsSection(); CreatureControlsSection(); break;
             case 14: MusicSection(); MoreMusicSection(); break;
             case 15: MenusSection(); break;
             case 16: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
