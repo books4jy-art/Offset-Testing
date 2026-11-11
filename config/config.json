@@ -4,7 +4,7 @@
     "author": "books4jy-art",
     "description": "Sky Mesh Lab: explore Sky 0.35.2's game library. Ready-made features (transform, hover, speed, shout and more), fire any registered game type, record and replay the events the game starts, run Lua, read memory, watch function calls. Experimental.",
     "majorVersion": 0,
-    "minorVersion": 34,
+    "minorVersion": 35,
     "patchVersion": 0,
     "compatibilityGameVersion": "0.35.2",
     "displaysUI": true,

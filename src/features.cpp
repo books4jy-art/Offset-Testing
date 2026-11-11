@@ -297,6 +297,7 @@ bool OneShot(const char* type) {
         "SetHeadMesh", "DisableCloudPhysics", "Snowboard", "SnowBallMittens", "DailyLightRefreshFx", "CapeUpgradeFx", "LevelUpFx", "ExplosionFx", "OpenInstrumentMenu", "SetMusicVolume", "MusicallyReactiveClothing", "Arpeggiator",
         "SocialSitDown", "SocialAttitude", "SocialDance", "SocialMuscle", "SocialHide", "SocialSeek", "SocialLargeShout", "SocialSparkler", "SocialSurprise", "SocialSignalFlags", "SocialShowPresence", "SocialPickRadish", "SocialCandle", "SocialChat", "SocialDarkHornBlast", "SocialGrapplingHookLaunch", "SocialToggleAntlerHelmOrb", "SocialGoHome", "HideRemotePlayers", "ClearChatBubbles",
         "CatCurseBuff", "ChibiFormBuff", "OreoFormBuff", "RabbitFormBuff", "DarkCreatureFormBuff", "ChibiOutfit", "MischiefWand", "MeteorFall", "Popcorn", "FortuneDrum", "FortuneFan", "FortunePony", "MarshmallowStick", "JenovaFan", "BouncyBalloon", "Kaleidojam", "BallPit", "DarkCreaturesLeave", "SetDefangedDarkCreature", "MoteCarryAvatar", "ChangeLevelToHome", "Npc_SetScale", "ShowHUDTimed", "OpenConstellationMenu", "SocialOpenConstellationFriendMenu", "OpenRelationshipMenu", "OpenSocialMenu", "UiInboxMenu", "SocialPropMenu", "SocialToysMenu", "OpenDyeMenu", "ForceMinimalHUD", "HideBubbleButtons", "UIQuestBanner",
+        "SocialHandHold", "SocialHandHoldLead", "SocialCarryHopOn", "SocialCarryHopOff", "SocialArmWrestle", "SocialKingHug", "SocialLink", "SocialUnlink", "SocialSeekFind", "SocialEmote", "SocialEmoteLoop", "SocialEmoteRhythmicLoop", "SocialPickUp", "SocialOffer", "SocialGuideOn", "SocialGuideToAndHandHold", "TryCompleteQuest", "TryCollectQuest", "AutoCollectCompletedQuest", "ShardFall", "DarkCreaturesAttack", "WaxPickupSpawnerZone",
         "SetCameraShake", "AvatarGrindToPos", "AvatarOverrideCapeLevel", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
@@ -3941,6 +3942,153 @@ void PlayerTick(double t) {
 }
 
 int gSub = 0;
+// ---------------------------------------------------------------- 0.35.0: Danger zone
+// Everything left out of the other tabs on purpose: rewards and progress, server requests, actions on other players,
+// and TheVoid entries whose effect or 0.35.2 port couldn't be confirmed. Locked until "I understand" is switched on
+// (off at every start). Not here at all: TheVoid's player.all_iaps (unlocks paid content without paying) and purchase
+// events.
+const ImVec4 kDangerRed(0.86f, 0.15f, 0.15f, 0.85f);
+bool gDangerOk = false;
+
+// TheVoid's complete_game: it checks the call at 0xEE6A04 is "bl 0xEED26C" (its patch string 1A1A0094) and writes a
+// NOP (1F2003D5); the getter at 0xEE69F8 then returns its own object instead of the lookup result.
+const CodePatch kCompleteGamePatch = {"Complete game", 0xEE6A04, 0x94001A1Au /* bl 0xEED26C */, kNop};
+// Auto collect wax (TheVoid's command.auto_collect_wax site): the wax pickup timer at 0x28F46E4 only advances while a
+// pickup's flag (+0x108) is set; the test (tbz) NOPed, it always advances. TheVoid's exact patch value isn't known;
+// NOP is its only patch string that fits.
+const CodePatch kAutoWaxPatch = {"Auto collect wax", 0x28F46E8, 0x360001E8u /* tbz w8, #0, #0x28F4724 */, kNop};
+// TheVoid's unnamed 9af520 pair (raindrop phase store 0x1D324DC, "Night_GO_Field" found-flag store 0x1D348F0): NOPs.
+const CodePatch kRainNightPatch[2] = {{"Rain/night stores", 0x1D324DC, 0xBD004261u /* str s1, [x19, #0x40] */, kNop},
+                                      {"Rain/night stores", 0x1D348F0, 0x3900E268u /* strb w8, [x19, #0x38] */, kNop}};
+// TheVoid's unnamed 3afb04 (engine flame/idle sound code, 0xFBDF5C): the load of a value it stores on; TheVoid's float
+// patch strings fit (fmov s0, wzr / fmov s0, #1.0).
+const uint32_t kEngineAt = 0xFBDF5C, kEngineOrig = 0xBD412F80u /* ldr s0, [x28, #0x12c] */;
+const uint32_t kEngineVal[3] = {0, 0x1E2703E0u /* fmov s0, wzr */, 0x1E2E1000u /* fmov s0, #1.0 */};
+
+bool SetEngine(int choice) {
+    uint32_t cur = 0;
+    if (!GameBase() || !ReadMemory(GameBase() + kEngineAt, &cur, 4) ||
+        (cur != kEngineOrig && cur != kEngineVal[1] && cur != kEngineVal[2])) {
+        Log("Engine value: the game code at 0x%X isn't what 0.35.2 has; not changed", kEngineAt);
+        return false;
+    }
+    uint32_t v = choice ? kEngineVal[choice] : kEngineOrig;
+    return cur == v || WriteGameMemory(kEngineAt, &v, 4);
+}
+
+void DangerButtons(const char* const (*list)[2], int n, int perRow) {
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * (float)(perRow - 1)) / (float)perRow;
+    for (int i = 0; i < n; i++) {
+        if (i % perRow) ImGui::SameLine();
+        ImGui::PushID(list[i][1]);
+        if (ImGui::Button(list[i][0], ImVec2(bw, 0))) StartEvent(std::string("Danger zone: ") + list[i][0], "", list[i][1], {});
+        ImGui::PopID();
+    }
+}
+
+void DangerZoneTab() {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f, 0.45f, 0.45f, 1.f));
+    ImGui::TextWrapped("DANGER ZONE. These were left out of the other tabs on purpose: they can change your account "
+                       "(rewards, quests, progress), send real requests to the server, act on other players, or crash "
+                       "the game. Using them can get an account flagged. Use them at your own risk.");
+    ImGui::PopStyleColor();
+    if (Toggle("I understand (off at every start)", &gDangerOk, "Unlocks everything below."))
+        Log("Danger zone %s", gDangerOk ? "unlocked" : "locked");
+    ImGui::BeginDisabled(!gDangerOk);
+
+    Section("THEVOID: PROGRESS & REWARDS", "TheVoid's entries for game progress and collecting.");
+    static bool complete = false, autoWax = false, autoFrag = false, shardA = false, shardB = false;
+    PatchToggle("Complete game (TheVoid's patch)", &complete, kCompleteGamePatch,
+                "TheVoid's command.complete_game: the call at 0xEE6A04 is skipped, exactly as TheVoid does. What the "
+                "game then treats as complete may be saved by the server.");
+    PatchToggle("Auto collect wax", &autoWax, kAutoWaxPatch,
+                "Wax pickups' collect timer always runs (TheVoid's auto_collect_wax site). Collected wax is real.");
+    if (Toggle("Auto collect fragments", &autoFrag, "TheVoid's auto_collect_fragments switch (0x347BE10)."))
+        if (!SetSwitch("Auto collect fragments", 0x347BE10, autoFrag)) autoFrag = !autoFrag;
+    if (Toggle("Shard eruption flag A (0x34842A0)", &shardA, "Shard eruption debug flag."))
+        if (!SetSwitch("Shard flag A", 0x34842A0, shardA)) shardA = !shardA;
+    if (Toggle("Shard eruption flag B (0x34842A4)", &shardB,
+               "With B on and A off, the eruption timer the game builds is 30 s instead of 600 s (0x22F8A88)."))
+        if (!SetSwitch("Shard flag B", 0x34842A4, shardB)) shardB = !shardB;
+
+    Section("THEVOID: UNCONFIRMED", "TheVoid entries whose effect or 0.35.2 port couldn't be confirmed. Each checks "
+                                    "the game code or value first; off puts it back.");
+    static bool rainNight = false, unknownA = false, unknownB = false;
+    if (Toggle("Rain/night stores off", &rainNight,
+               "TheVoid's unnamed pair: the raindrop animation phase store and the Night_GO_Field flag store are "
+               "skipped (NOPs).")) {
+        bool ok = SetCodePatch(kRainNightPatch[0], rainNight);
+        if (ok && !SetCodePatch(kRainNightPatch[1], rainNight)) SetCodePatch(kRainNightPatch[0], !rainNight), ok = false;
+        if (!ok) rainNight = !rainNight;
+        else Log("Rain/night stores %s", rainNight ? "off" : "back");
+    }
+    static int engine = 0;
+    ImGui::TextUnformatted("Engine value (0xFBDF5C)");
+    static const char* kEng[] = {"Normal", "0", "1"};
+    for (int i = 0; i < 3; i++) {
+        if (i) ImGui::SameLine();
+        ImGui::PushID(i);
+        if (ImGui::RadioButton(kEng[i], engine == i) && engine != i && SetEngine(i)) engine = i, Log("Engine value %s", kEng[i]);
+        ImGui::PopID();
+    }
+    Dim("TheVoid's unnamed entry in the engine flame / engine idle sound code: the value it stores on, replaced.");
+    if (Toggle("Unconfirmed byte 0x2F5D028 off", &unknownA,
+               "TheVoid's unnamed ca21b8 (1 normally). Nothing in 0.35.2 reads this address, so it likely does nothing."))
+        if (!SetSwitch("Byte 0x2F5D028", 0x2F5D028, !unknownA)) unknownA = !unknownA;
+    if (Toggle("Unconfirmed byte 0x34660D9 on", &unknownB,
+               "TheVoid's unnamed 4ef60e data half (0 normally). Nothing in 0.35.2 reads it, so it likely does nothing."))
+        if (!SetSwitch("Byte 0x34660D9", 0x34660D9, unknownB)) unknownB = !unknownB;
+    Dim("Not added: TheVoid's 0x26C14F0 and 0x143482C patches (no patch value can be worked out for 0.35.2, and a "
+        "wrong one would break the code there), and player.all_iaps (unlocks paid content without paying).");
+
+    Section("ON OTHER PLAYERS", "The social menu's pair actions: they act on the player picked in the social menu "
+                                "(open it on someone first). With nobody picked they may crash the game.");
+    static const char* const kPair[][2] = {
+        {"Hand hold", "SocialHandHold"},       {"Lead hand hold", "SocialHandHoldLead"}, {"Carry: hop on", "SocialCarryHopOn"},
+        {"Carry: hop off", "SocialCarryHopOff"}, {"Arm wrestle", "SocialArmWrestle"},     {"King hug", "SocialKingHug"},
+        {"Link", "SocialLink"},                {"Unlink", "SocialUnlink"},               {"Seek: found", "SocialSeekFind"},
+        {"Emote", "SocialEmote"},              {"Emote loop", "SocialEmoteLoop"},        {"Rhythm emote", "SocialEmoteRhythmicLoop"},
+        {"Pick up", "SocialPickUp"},           {"Offer", "SocialOffer"},                 {"Guide", "SocialGuideOn"},
+        {"Guide & hold hand", "SocialGuideToAndHandHold"}};
+    DangerButtons(kPair, IM_ARRAYSIZE(kPair), 3);
+
+    Section("QUESTS, SHARDS & KRILL", "Quest events act on your current quest and are checked by the server. Krill "
+                                      "attack: being hit costs real wing light.");
+    static const char* const kQuest[][2] = {{"Try complete quest", "TryCompleteQuest"},
+                                            {"Try collect quest", "TryCollectQuest"},
+                                            {"Collect completed quests", "AutoCollectCompletedQuest"},
+                                            {"Shard fall", "ShardFall"}};
+    DangerButtons(kQuest, IM_ARRAYSIZE(kQuest), 2);
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    if (ImGui::Button("Krill attack me", ImVec2(bw, 0)))
+        StartEvent("Danger zone: krill attack", "", "DarkCreaturesAttack",
+                   {{"targetIslocal", "true", ""}, {"windUp", "true", ""}, {"charge", "true", ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Wax spawner here", ImVec2(bw, 0))) {
+        std::string m;
+        if (MarkerHere("Wax spawner", 0.f, m, 5.f)) {
+            std::string ev = EventLua("", "WaxPickupSpawnerZone",
+                                      {{"spawnRegion", "OffsetLab.waxClump", ""}, {"autoCollectWax", "true", ""},
+                                       {"alwaysSpawn", "true", ""}, {"retriggerable", "true", ""}},
+                                      true);
+            if (!ev.empty())
+                Run("Danger zone: wax spawner",
+                    std::string(kPrelude) + "do\n" + m + "OffsetLab.waxClump = game:clumpBarn():CreateClumpWithSize(1)\n"
+                                            "OffsetLab.waxClump:SetAt(0, m)\n"
+                                            "OffsetLab.marks[#OffsetLab.marks + 1] = OffsetLab.waxClump\nend\n" + ev,
+                    "once:WaxPickupSpawnerZone");
+        }
+    }
+    Dim("Wax spawner: the game's wax pickup zone where you stand (as TSM spawns it). It needs the level's own pickup "
+        "ids, so it may spawn nothing.");
+
+    Section("EVERY OTHER TYPE", "Server and account types, triggers and internal types can all be fired by hand in "
+                                "the All events tab with its \"Server types\" switch.");
+    if (ImGui::Button("Open All events", ImVec2(bw, 0))) gSub = 16;
+    ImGui::EndDisabled();
+}
+
+
 
 }  // namespace
 
@@ -4068,14 +4216,16 @@ void FeaturesTab() {
     Dim("Sliders apply when you let go; Reset puts the game's normal behaviour back. Results show in the Log tab.");
     Dim("%s", LuaStatus().c_str());
     static const char* kSubs[] = {"Player", "Energy", "Transform", "Outfits", "Items", "Spells", "Emotes",
-                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn", "Music", "Menus", "All events"};
+                                  "Camera", "World",  "Teleport",  "Social",  "Shout", "Visuals", "Spawn", "Music", "Menus", "All events",
+                                  "Danger zone"};
+    constexpr int kDangerSub = 17;
     // buttons, not a tab bar: a second tab bar inside the Features tab didn't switch on the phone. The grid folds into
     // one header line (the current sub-tab and an arrow); picking a sub-tab folds it again. Saved in the prefs.
     bool collapsed = FeaturesTabsCollapsed();
     {
         char head[64];
         snprintf(head, sizeof head, "%s##subhead", kSubs[gSub]);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+        ImGui::PushStyleColor(ImGuiCol_Button, gSub == kDangerSub ? kDangerRed : ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.f, 0.5f));
         if (ImGui::Button(head, ImVec2(-1, Dp(44)))) {
             collapsed = !collapsed;
@@ -4098,13 +4248,15 @@ void FeaturesTab() {
         const float subW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 4) / 5;
         for (int i = 0; i < (int)IM_ARRAYSIZE(kSubs); i++) {
             if (i % 5) ImGui::SameLine();
-            bool sel = gSub == i;
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
+            bool sel = gSub == i, danger = i == kDangerSub;
+            if (sel || danger)  // the Danger zone is always red (brighter when picked)
+                ImGui::PushStyleColor(ImGuiCol_Button, danger ? (sel ? kDangerRed : ImVec4(0.6f, 0.1f, 0.1f, 0.7f))
+                                                              : ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
             if (ImGui::Button(kSubs[i], ImVec2(subW, Dp(44)))) {
                 gSub = i;
                 SetFeaturesTabsCollapsed(true);  // the space back once a sub-tab is picked
             }
-            if (sel) ImGui::PopStyleColor();
+            if (sel || danger) ImGui::PopStyleColor();
         }
     }
     ImGui::Separator();
@@ -4126,7 +4278,8 @@ void FeaturesTab() {
             case 13: SpawnTab(); WorldSpawnsSection(); MoreSpawnsSection(); CreatureControlsSection(); break;
             case 14: MusicSection(); MoreMusicSection(); break;
             case 15: MenusSection(); break;
-            case 16: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
+            case 16: AllEventsTab(); break;
+            case 17: DangerZoneTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
     }
     TouchScroll();
