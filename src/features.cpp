@@ -1655,6 +1655,13 @@ struct SpellsState {
     char filter[64] = "", custom[64] = "";
     std::string last;
     std::vector<std::string> selected;  // 0.29.0: spells picked to be readied together
+    // 0.29.2: the selection is readied one spell at a time, `gap` seconds apart. Tested 0.29.1: six spells readied in
+    // one script (the same frame) and none played on the next cast, while two readied by separate taps earlier both
+    // played.
+    std::vector<std::string> queue;
+    size_t queueTotal = 0;
+    double queueNext = 0;
+    float gap = 1.f;
 } SP;
 constexpr size_t kMaxSelected = 24;
 
@@ -1669,7 +1676,7 @@ bool SpellId(const std::string& id) {
 
 // Readies the spells in one script: the Lua queue keeps one waiting script per key, so separate requests made in the
 // same moment under one key would replace each other and only the last spell would be readied.
-void ReadySpells(const std::vector<std::string>& ids) {
+void ReadySpells(const std::vector<std::string>& ids, const std::string& count = "") {
     std::string lua;
     std::vector<std::string> ok;
     for (const auto& id : ids) {
@@ -1681,7 +1688,7 @@ void ReadySpells(const std::vector<std::string>& ids) {
         ok.push_back(id);
     }
     if (ok.empty()) return;
-    std::string what = ok.size() == 1 ? "Spell ready: " + ok[0]
+    std::string what = ok.size() == 1 ? "Spell ready" + (count.empty() ? "" : " " + count) + ": " + ok[0]
                                       : std::to_string(ok.size()) + " spells ready";
     if (Run(what + " (cast any spell to use " + (ok.size() == 1 ? "it" : "them") + ")", kPrelude + lua,
             // own key per single spell and for the selection: one shared key let a quick second tap (or a message item
@@ -1690,7 +1697,7 @@ void ReadySpells(const std::vector<std::string>& ids) {
         SP.last = ok.size() == 1 ? ok[0] : std::to_string(ok.size()) + " spells";
 }
 
-void ReadySpell(const std::string& id) { ReadySpells({id}); }
+void ReadySpell(const std::string& id, const std::string& count = "") { ReadySpells({id}, count); }
 
 bool IsSelected(const std::string& id) {
     return std::find(SP.selected.begin(), SP.selected.end(), id) != SP.selected.end();
@@ -1733,11 +1740,30 @@ void SelectedSpellsSection() {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.74f, 0.97f, 0.60f));
     char ready[48];
     snprintf(ready, sizeof ready, "Ready %zu selected###ready", SP.selected.size());
-    if (ImGui::Button(ready, ImVec2(cw, Dp(44)))) ReadySpells(SP.selected);
+    bool busy = !SP.queue.empty();
+    ImGui::BeginDisabled(busy);
+    if (ImGui::Button(ready, ImVec2(cw, Dp(44)))) {
+        SP.queue.assign(SP.selected.rbegin(), SP.selected.rend());  // popped from the back: first selected goes first
+        SP.queueTotal = SP.queue.size();
+        SP.queueNext = 0;
+    }
+    ImGui::EndDisabled();
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    if (ImGui::Button("Clear selection", ImVec2(cw, Dp(44)))) SP.selected.clear();
-    Dim("The selection stays after readying, so the same set can be readied again.");
+    if (busy) {
+        if (ImGui::Button("Stop readying", ImVec2(cw, Dp(44)))) {
+            Log("Spells: readying stopped (%zu of %zu readied)", SP.queueTotal - SP.queue.size(), SP.queueTotal);
+            SP.queue.clear(), SP.queueTotal = 0;
+        }
+        ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.f, 1.f), "Readying %zu of %zu... cast after it finishes.",
+                           SP.queueTotal - SP.queue.size(), SP.queueTotal);
+    } else if (ImGui::Button("Clear selection", ImVec2(cw, Dp(44)))) {
+        SP.selected.clear();
+    }
+    ImGui::TextUnformatted("Time between spells");
+    Slider("spgap", &SP.gap, 0.3f, 5.f, 1.f, "%.1f s");
+    Dim("Readied one at a time: several started in the same moment didn't play. The selection stays after readying, so "
+        "the same set can be readied again.");
 }
 
 void SpellsTab() {
@@ -3413,10 +3439,23 @@ const char* FeatureLuaPrelude() { return kPrelude; }
 bool GameIcon(const std::string& name, float size) { return DrawIcon(name, size); }
 
 // Repeating actions; called every frame from Draw, whichever tab is open.
+void SpellsTick(double t) {
+    if (SP.queue.empty() || t < SP.queueNext) return;
+    std::string id = SP.queue.back();
+    SP.queue.pop_back();
+    ReadySpell(id, std::to_string(SP.queueTotal - SP.queue.size()) + "/" + std::to_string(SP.queueTotal));
+    SP.queueNext = t + SP.gap;
+    if (SP.queue.empty()) {
+        Log("Spells: all %zu readied; cast any spell to use them", SP.queueTotal);
+        SP.queueTotal = 0;
+    }
+}
+
 void FeaturesTick() {
     MusicTick();
     if (!GameObject()) return;
     double t = ImGui::GetTime();
+    SpellsTick(t);
     if (F.scatter && t >= F.scatterNext) {
         F.scatterNext = t + 0.5;
         StartEvent("", "scatter", "AvatarBreakHandHold",
