@@ -294,6 +294,7 @@ bool OneShot(const char* type) {
         "SetAvatarGravityMult", "SetAvatarRunSpeedMult", "AvatarCrawl", "PlayAvatarAnimSeq", "AvatarPlayEmote",
         "OpenDanceMenu", "SocialMessageStones", "SocialRandomGame", "SocialFireworksMenu", "SetLocalAudienceJelly", "DisplayText", "DisplayTitleCard", "HubbaBubbaZone", "MusicalMoteTarget", "HomeDirectoryButton",
         "AvatarSetZeroG", "AvatarSing", "AvatarSetHusk", "AvatarSetMamaGooseMode", "FlyingBroom", "AvatarScoopWater", "AvatarPourWater", "AvatarDiveUp", "AvatarWarpYToOceanSurface", "AvatarNavigateTo", "EmoteShoutPrompt", "SingingLight", "AvatarDetachFromLeader", "CameraTakeOutTripodMode", "NpcSetPhotoMode", "ClosePhotoMode", "SocialTakeScreenshot", "OnScreenCameraButton",
+        "SetHeadMesh", "DisableCloudPhysics", "Snowboard", "SnowBallMittens", "DailyLightRefreshFx", "CapeUpgradeFx", "LevelUpFx", "ExplosionFx", "OpenInstrumentMenu", "SetMusicVolume", "MusicallyReactiveClothing", "Arpeggiator",
         "SetCameraShake", "AvatarGrindToPos", "AvatarOverrideCapeLevel", "ControlSettingsMenu", "GraphicsSettingsMenu", "OpenQuestMenu", "OpenSeasonPassCommerceMenu", "ReportMenu", "ShowPhotoOpUI", "SocialOpenMenu", "SocialCloseMenu", "SocialDarkHornMenu", "SocialGrapplingHookMenu", "SocialRecorderMenu", "AP27ShepherdStaff", "AP27Shield", "AP27Spear", "AP27ManateeFigurine", "EnablePlayerProp", "WearTeaSet", "TeaTableAction", "ProtoTrampoline", "PropSimpleAnim", "PlaceableAction", "PlacePlushieTossPlaceable", "PlacePuzzleKey", "PlacePlaceablePickup", "AwakenDarkCreatures", "DarkHornBlast", "ReleaseBirds", "Crab_Straighten", "BirdFlockOverrides", "Npc_SetReflected", "Npc_Reflect", "PlayMusic", "SetMusicKey", "PlaySound2D", "AudioSettingsMenu", "OpenAppleMusicMenu", "OpenNoteMenu", "OpenNextVisualNoteMenu", "RefreshNotesMenu", "ClearSharedSpaceShrineLocalNote", "TriggerToyEvent", "SocialToggleStarryUmbrella", "SocialStarryOutfitEvent", "SocialFireworks", "RiddleShrineNoteAnswerEffect", "LaunchFirework", "SetCloudsEnabled", "InfiniteScrollClouds", "CloudNoiseVelocity", "SetRainParams", "SetWindIntensity", "SetWind", "CollectWingBuffServerRequestEvent", "DepositWingBuffServerRequestEvent",
         "ConvertWingBuffsServerRequestEvent", "DropWingBuffServerRequestEvent",
         // 0.11.0: these stop themselves in their first update (their update calls the game's event stop, 0x171F82C)
@@ -2371,6 +2372,120 @@ void CameraAbilitiesSection() {
     Dim("Tripod camera: the game's tripod photo mode with its camera set where you stand.");
 }
 
+// 0.32.0: visuals and music from the game type list. One-shot game events, game setting names.
+struct VisMusicState {
+    float musicVol = 1.f, musicFade = 1.f, tempo = 1.f, difficulty = 1.f, arpVol = 0.5f;
+    int sheetMode = 0, instrument = -1, arpInstrument = 3;
+    bool localOnly = true, hideScore = false;
+    char sheet[64] = "";
+    std::vector<std::string> instruments, arpInstruments;
+    bool listed = false;
+} VM;
+
+void MoreVisualsSection() {
+    Section("MORE VISUALS", "The game's own visual events (from the game type list). Each plays once; what it changes "
+                            "lasts until it's changed again or you change level.");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    if (ImGui::Button("Hide your head", ImVec2(bw, 0)))
+        StartEvent("Head hidden", "", "SetHeadMesh", {{"enable", "false", ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Show your head", ImVec2(bw, 0)))
+        StartEvent("Head shown", "", "SetHeadMesh", {{"enable", "true", ""}});
+    if (ImGui::Button("Cloud physics off", ImVec2(bw, 0))) StartEvent("Cloud physics off", "", "DisableCloudPhysics", {});
+    ImGui::SameLine();
+    if (ImGui::Button("Snowboard", ImVec2(bw, 0))) StartEvent("Snowboard", "", "Snowboard", {});
+    if (ImGui::Button("Snowball mittens", ImVec2(bw, 0))) StartEvent("Snowball mittens", "", "SnowBallMittens", {});
+    Dim("Head: SetHeadMesh on your avatar. Snowboard / mittens: the game's seasonal events; they may only work in "
+        "levels made for them.");
+}
+
+void MoreMusicSection() {
+    if (!VM.listed && GameBase()) {
+        VM.listed = true;
+        for (const auto& o : EnumOptions("Arpeggiator", "instrument"))
+            VM.arpInstruments.push_back(o.rfind("kInstrumentId_", 0) == 0 ? o.substr(14) : o);
+    }
+    if (VM.instruments.empty() && !M.outfits.empty()) {  // instrument props from the outfit list (Outfits tab)
+        static const char* kWords[] = {"harp", "piano", "guitar", "ukulele", "flute", "horn", "drum", "lute", "pipa",
+                                       "xylo", "glock", "kalimba", "violin", "cello", "trumpet", "bell", "ocarina",
+                                       "triangle", "handpan", "bugle", "mandolin", "banjo", "accordion"};
+        for (const auto& d : M.outfits) {
+            if (Lower(d.type) != "prop") continue;
+            std::string l = Lower(d.name);
+            for (const char* w : kWords)
+                if (l.find(w) != std::string::npos) { VM.instruments.push_back(d.name); break; }
+        }
+    }
+    Section("INSTRUMENT MENU", "The game's instrument menu (OpenInstrumentMenu) with its own options: any instrument "
+                               "prop, note or sheet mode, tempo and difficulty.");
+    std::string cur = VM.instrument < 0 || VM.instrument >= (int)VM.instruments.size() ? "The one you hold"
+                                                                                       : VM.instruments[VM.instrument];
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##instr", cur.c_str())) {
+        if (ImGui::Selectable("The one you hold", VM.instrument < 0)) VM.instrument = -1;
+        for (int i = 0; i < (int)VM.instruments.size(); i++)
+            if (ImGui::Selectable(VM.instruments[i].c_str(), i == VM.instrument)) VM.instrument = i;
+        ImGui::EndCombo();
+    }
+    if (VM.instruments.empty()) Dim("Open the Outfits tab once to list the instrument props.");
+    ImGui::RadioButton("Notes", &VM.sheetMode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Sheet", &VM.sheetMode, 1);
+    ImGui::SameLine();
+    ImGui::Checkbox("Local only", &VM.localOnly);
+    ImGui::SameLine();
+    ImGui::Checkbox("Hide score", &VM.hideScore);
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##sheet", "sheet music name (optional)", VM.sheet, sizeof VM.sheet);
+    Slider("tempo", &VM.tempo, 0.25f, 3.f, 1.f, "tempo %.2fx");
+    Slider("difficulty", &VM.difficulty, 0.25f, 3.f, 1.f, "difficulty %.2fx");
+    if (ImGui::Button("Open instrument menu", ImVec2(Px(320), 0))) {
+        std::string outfit = VM.instrument < 0 || VM.instrument >= (int)VM.instruments.size() ? "" : VM.instruments[VM.instrument];
+        StartEvent("Instrument menu" + (outfit.empty() ? std::string() : ": " + outfit), "", "OpenInstrumentMenu",
+                   {{"outfitName", Quote(outfit), ""}, {"useEquippedInstrument", outfit.empty() ? "true" : "false", ""},
+                    {"sheetMusicName", Quote(VM.sheet), ""},
+                    {"startingMode", VM.sheetMode ? "\"kInstrumentMode_Sheet\"" : "\"kInstrumentMode_Note\"",
+                     VM.sheetMode ? "1" : "0"},
+                    {"tempoMultiplier", Num(VM.tempo), ""}, {"difficultyMod", Num(VM.difficulty), ""},
+                    {"hideScore", VM.hideScore ? "true" : "false", ""}, {"localOnly", VM.localOnly ? "true" : "false", ""},
+                    {"localAudio", VM.localOnly ? "true" : "false", ""}, {"controlsCameraPos", "false", ""}});
+    }
+    Dim("Local only: your notes aren't sent to others (the game's localAudio: no play-note messages).");
+
+    Section("MUSIC VOLUME & MORE", nullptr);
+    Slider("musicvol", &VM.musicVol, 0.f, 2.f, 1.f, "music volume %.2f");
+    Slider("musicfade", &VM.musicFade, 0.f, 5.f, 1.f, "fade %.1f s");
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    if (ImGui::Button("Set music volume", ImVec2(bw, 0)))
+        StartEvent("Music volume " + Num(VM.musicVol), "", "SetMusicVolume",
+                   {{"volume", Num(VM.musicVol), ""}, {"fadeTime", Num(VM.musicFade), ""}});
+    ImGui::SameLine();
+    if (ImGui::Button("Music-reactive outfit", ImVec2(bw, 0)))
+        StartEvent("Music-reactive outfit", "", "MusicallyReactiveClothing", {});
+    if (!VM.arpInstruments.empty()) {
+        ImGui::TextUnformatted("Arpeggiator (a run of notes where you stand)");
+        if (VM.arpInstrument >= (int)VM.arpInstruments.size()) VM.arpInstrument = 0;
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+        if (ImGui::BeginCombo("##arp", VM.arpInstruments[VM.arpInstrument].c_str())) {
+            for (int i = 0; i < (int)VM.arpInstruments.size(); i++)
+                if (ImGui::Selectable(VM.arpInstruments[i].c_str(), i == VM.arpInstrument)) VM.arpInstrument = i;
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Play##arp", ImVec2(-1, 0))) {
+            std::string m;
+            if (MarkerHere("Arpeggiator", 1.f, m))
+                StartWithMarker("Arpeggiator: " + VM.arpInstruments[VM.arpInstrument], "Arpeggiator", m,
+                                {{"soundSource", "OffsetLab.lastMark", ""},
+                                 {"instrument", Quote("kInstrumentId_" + VM.arpInstruments[VM.arpInstrument]),
+                                  std::to_string(VM.arpInstrument)},
+                                 {"vol", Num(VM.arpVol), ""}});
+        }
+        Slider("arpvol", &VM.arpVol, 0.f, 1.f, 0.5f, "volume %.2f");
+        Dim("Experimental: the game's arpeggiator with a marker as its sound source.");
+    }
+}
+
 void WorldSection() {
     Section("WORLD & COLLISION", nullptr);
     if (Toggle("No collision", &F.noCollision,
@@ -2832,12 +2947,16 @@ void ItemsSection() {
     {
         struct Fx { const char* label; const char* type; };
         static const Fx kFx[] = {{"New emote", "GetEmoteFx"}, {"Emote break", "BreakEmoteFx"},
-                                 {"Winged light star bling", "StarBlingFx"}, {"Purchase", "PlayPurchaseFX"}};
+                                 {"Winged light star bling", "StarBlingFx"}, {"Purchase", "PlayPurchaseFX"},
+                                 // 0.32.0, from the game type list
+                                 {"Daily light refresh", "DailyLightRefreshFx"}, {"Cape upgrade (Fx)", "CapeUpgradeFx"},
+                                 {"Level up (Fx)", "LevelUpFx"}, {"Explosion (Fx)", "ExplosionFx"}};
         for (int i = 0; i < (int)IM_ARRAYSIZE(kFx); i++) {
             if (i % 2) ImGui::SameLine();
             if (ImGui::Button(kFx[i].label, ImVec2(Px(250), 0)))
                 StartEvent(std::string(kFx[i].label) + " animation", "", kFx[i].type, {});
         }
+        Dim("The last four (from the game type list, 0.32.0) weren't checked for server messages like the first four.");
     }
     ImGui::Spacing();
     ImGui::TextUnformatted("More effects (the game's own debug commands, as TSM uses them)");
@@ -3827,9 +3946,9 @@ void FeaturesTab() {
             case 9: TeleportSection(); break;
             case 10: SocialSection(); SocialExtrasSection(); break;
             case 11: ShoutSection(); AudienceReactSection(); break;
-            case 12: SkySection(); ScreenTextSection(); SwitchesSection(); CodeSwitchesSection(); break;
+            case 12: SkySection(); ScreenTextSection(); MoreVisualsSection(); SwitchesSection(); CodeSwitchesSection(); break;
             case 13: SpawnTab(); WorldSpawnsSection(); CreatureControlsSection(); break;
-            case 14: MusicSection(); break;
+            case 14: MusicSection(); MoreMusicSection(); break;
             case 15: MenusSection(); break;
             case 16: AllEventsTab(); break;  // the Spawn tab's content (spawn.cpp), here while the main tabs are hidden
         }
