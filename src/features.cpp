@@ -2545,24 +2545,8 @@ void FormsSection() {
     }
 }
 
-void MorePropsSection() {
-    Section("MORE PROPS (game events)", "Prop and toy events from the game type list. Some only work where the game "
-                                        "uses them (e.g. during their season).");
-    struct Btn { const char* label; const char* type; };
-    static const Btn kProps[] = {{"Mischief wand", "MischiefWand"}, {"Meteor fall", "MeteorFall"},
-                                 {"Popcorn", "Popcorn"},            {"Fortune drum", "FortuneDrum"},
-                                 {"Fortune fan", "FortuneFan"},     {"Fortune pony", "FortunePony"},
-                                 {"Marshmallow stick", "MarshmallowStick"}, {"Jenova fan", "JenovaFan"}};
-    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-    for (int i = 0; i < (int)IM_ARRAYSIZE(kProps); i++) {
-        if (i % 2) ImGui::SameLine();
-        ImGui::PushID(i);
-        if (ImGui::Button(kProps[i].label, ImVec2(bw, 0))) StartEvent(kProps[i].label, "", kProps[i].type, {});
-        ImGui::PopID();
-    }
-}
 
-struct MoreSpawnState { float balloonCharge = 0.5f, size = 3.f, moteTime = 3.f; } MS;
+struct MoreSpawnState { float balloon = 20.f, trampoline = 1.f, moteTime = 3.f; } MS;
 
 // A 4x4 transform table (Lua) at your position, scaled; "" when your position can't be read.
 std::string TransformHere(const char* what, float scale) {
@@ -2580,26 +2564,21 @@ std::string TransformHere(const char* what, float scale) {
 void MoreSpawnsSection() {
     Section("MORE SPAWNS & CREATURES", "From the game type list. Placed things stay until you change level.");
     float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
-    Slider("spawnsize", &MS.size, 0.5f, 20.f, 3.f, "size %.1f");
-    if (ImGui::Button("Bouncy balloon", ImVec2(bw, 0))) {
-        std::string t = TransformHere("Bouncy balloon", MS.size);
-        if (!t.empty())
-            StartEvent("Bouncy balloon", "", "BouncyBalloon",
-                       {{"transform", t, ""}, {"chargeAmount", Num(MS.balloonCharge), ""}, {"bobDistance", "0.5", ""},
-                        {"playParticleEffectOnBounce", "true", ""}});
+    // 0.36.0: trampoline and bouncy balloon as TSM spawns them (ProtoTrampoline / BouncyBalloon with only a transform at
+    // your position; TSM's scales 1 and 20). Kaleidojam and ball pit were removed: tested, the kaleidojam did nothing
+    // and the ball pit's balls weren't drawn (both need their own level's resources; TSM doesn't spawn them).
+    Slider("trampsize", &MS.trampoline, 0.25f, 5.f, 1.f, "trampoline size %.2f");
+    if (ImGui::Button("Trampoline", ImVec2(bw, 0))) {
+        std::string t = TransformHere("Trampoline", MS.trampoline);
+        if (!t.empty()) StartEvent("Trampoline", "", "ProtoTrampoline", {{"transform", t, ""}});
     }
     ImGui::SameLine();
-    if (ImGui::Button("Kaleidojam", ImVec2(bw, 0))) {
-        std::string t = TransformHere("Kaleidojam", MS.size);
-        if (!t.empty()) StartEvent("Kaleidojam", "", "Kaleidojam", {{"transform", t, ""}});
+    if (ImGui::Button("Bouncy balloon", ImVec2(bw, 0))) {
+        std::string t = TransformHere("Bouncy balloon", MS.balloon);
+        if (!t.empty()) StartEvent("Bouncy balloon", "", "BouncyBalloon", {{"transform", t, ""}});
     }
-    if (ImGui::Button("Ball pit", ImVec2(bw, 0))) {
-        std::string m, t = TransformHere("Ball pit", MS.size);
-        if (!t.empty() && MarkerHere("Ball pit", -0.3f, m, MS.size))
-            StartWithMarker("Ball pit", "BallPit", m, {{"marker", "OffsetLab.lastMark", ""}, {"transform", t, ""}});
-    }
-    Slider("ballooncharge", &MS.balloonCharge, 0.f, 2.f, 0.5f, "balloon charge %.2f");
-    Dim("Bouncy balloon: bounce on it to charge. Kaleidojam and ball pit are experimental.");
+    Slider("balloonsize", &MS.balloon, 1.f, 60.f, 20.f, "balloon size %.0f");
+    Dim("Both appear where you stand (as TSM spawns them) and stay until you change level.");
 
     ImGui::TextUnformatted("Krill");
     if (ImGui::Button("Krill leave", ImVec2(bw, 0))) StartEvent("Krill leave", "", "DarkCreaturesLeave", {});
@@ -4266,7 +4245,7 @@ void FeaturesTab() {
             case 1: EnergySection(); break;
             case 2: TransformSection(); FormsSection(); ModesSection(); break;
             case 3: OutfitsSection(); SmoothResizeSection(); break;
-            case 4: ItemsSection(); MorePropsSection(); PlaceablesSection(); EffectsSection(); break;
+            case 4: ItemsSection(); PlaceablesSection(); EffectsSection(); break;
             case 5: SpellsTab(); break;
             case 6: EmotesSection(); break;
             case 7: CameraSection(); CameraAbilitiesSection(); break;
