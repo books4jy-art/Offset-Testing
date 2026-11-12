@@ -3,6 +3,7 @@
 // through the game's own AvatarSetPos event with a marker placed at the target; the avatar's position is only read
 // (natively, through a pointer chain checked in the 0.35.2 code), never written.
 #include "lab.h"
+#include <atomic>
 
 #include <algorithm>
 #include <cmath>
@@ -677,6 +678,116 @@ bool HoldAvatarAt(const float pos[3]) {
     return RunLua(s, "Freeze in place", "freeze") == 0;
 }
 
+// ---------------------------------------------------------------- 0.37.0: players & NPCs in this level
+// The AvatarBarn holds 59 avatar slots inline: slot i is barn + 0x30 + i * 0x10CF0 (0x11AF570); TSM lists slots 0-7 as
+// players and 8-58 as NPCs. A slot is in use when its two "gone" halfwords (+0x10A10, +0x10A12) are 0; bit 0 of
+// +0xB870 marks the local avatar (you). Position: the pointer at slot +0x18 -> {x, y, z}, as for your own avatar.
+constexpr uintptr_t kAvatarStride = 0x10CF0;
+constexpr int kAvatarSlots = 59, kPlayerSlots = 8;
+constexpr uintptr_t kSlotLocal = 0xB870, kSlotGone1 = 0x10A10, kSlotGone2 = 0x10A12;
+
+struct Person { int slot; float pos[3]; float dist; };
+
+// Everyone in use in this level but you, nearest first.
+std::vector<Person> ReadPeople(const float* me) {
+    std::vector<Person> out;
+    uintptr_t game = GameObject(), barn = 0;
+    if (!game || !Rd(game + kGameAvatarBarn, barn) || !barn) return out;
+    for (int i = 0; i < kAvatarSlots; i++) {
+        uintptr_t av = barn + kBarnLocalAvatar + (uintptr_t)i * kAvatarStride, p = 0;
+        uint8_t local = 1;
+        uint16_t g1 = 1, g2 = 1;
+        if (!Rd(av + kSlotLocal, local) || (local & 1) || !Rd(av + kSlotGone1, g1) || !Rd(av + kSlotGone2, g2) || g1 || g2)
+            continue;
+        if (!Rd(av + kAvatarPosPtr, p) || !p) continue;
+        Person q{i, {0, 0, 0}, 0};
+        if (!ReadMemory(p, q.pos, sizeof q.pos) || !Sane(q.pos[0]) || !Sane(q.pos[1]) || !Sane(q.pos[2])) continue;
+        if (q.pos[0] == 0 && q.pos[1] == 0 && q.pos[2] == 0) continue;  // an unused slot's empty position
+        if (me) {
+            float dx = q.pos[0] - me[0], dy = q.pos[1] - me[1], dz = q.pos[2] - me[2];
+            q.dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        out.push_back(q);
+    }
+    std::sort(out.begin(), out.end(), [](const Person& a, const Person& b) { return a.dist < b.dist; });
+    return out;
+}
+
+// "Bring": on the game thread, the NPC's position is set to yours (as TSM does; your screen only, the game may move
+// it back). The slot is checked again there.
+std::atomic<int> gBringSlot{-1};
+void BringOnGameThread(uintptr_t) {
+    int slot = gBringSlot.exchange(-1);
+    float me[3];
+    if (slot < kPlayerSlots || slot >= kAvatarSlots || !AvatarPos(me)) return;
+    uintptr_t game = GameObject(), barn = 0, p = 0;
+    if (!game || !Rd(game + kGameAvatarBarn, barn) || !barn) return;
+    uintptr_t av = barn + kBarnLocalAvatar + (uintptr_t)slot * kAvatarStride;
+    uint16_t g1 = 1, g2 = 1;
+    float cur[3];
+    if (!Rd(av + kSlotGone1, g1) || !Rd(av + kSlotGone2, g2) || g1 || g2 || !Rd(av + kAvatarPosPtr, p) || !p ||
+        !ReadMemory(p, cur, sizeof cur) || !Sane(cur[0]))
+        return;
+    float* pos = reinterpret_cast<float*>(p);
+    pos[0] = me[0] + 1.5f, pos[1] = me[1], pos[2] = me[2];  // beside you, not inside you
+    Log("NPC %d brought to you", slot);
+}
+
+struct PeopleState { int show = 0; double readAt = -10; std::vector<Person> list; bool havePos = false; } PP;
+
+void PeopleSection(const float* me) {
+    Section("PLAYERS & NPCS", "Everyone in this level (the game's avatar slots, as TSM lists them: 1-7 players, 8-58 "
+                              "NPCs), nearest first. The game keeps no names for strangers, so they're numbered.");
+    double now = Now();
+    if (now - PP.readAt > 0.5) PP.list = ReadPeople(me), PP.readAt = now;
+    ImGui::RadioButton("Everyone", &PP.show, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Players", &PP.show, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("NPCs", &PP.show, 2);
+    int n = 0;
+    for (const auto& q : PP.list) n += PP.show == 0 || (PP.show == 1) == (q.slot < kPlayerSlots);
+    Dim("%d found", n);
+    if (n == 0) {
+        Dim(GameObject() ? "Nobody else here right now." : "Enter the world first.");
+        return;
+    }
+    if (ImGui::BeginChild("##people", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 8.5f), ImGuiChildFlags_Border)) {
+        float bw = Px(130);
+        for (const auto& q : PP.list) {
+            bool player = q.slot < kPlayerSlots;
+            if (PP.show && (PP.show == 1) != player) continue;
+            ImGui::PushID(q.slot);
+            char label[64];
+            if (me) snprintf(label, sizeof label, "%s %d   %.0f m", player ? "Player" : "NPC", q.slot, q.dist);
+            else snprintf(label, sizeof label, "%s %d", player ? "Player" : "NPC", q.slot);
+            // buttons at the right end of the row: measured from where the row starts
+            float rowX = ImGui::GetCursorPosX(), avail = ImGui::GetContentRegionAvail().x;
+            float need = player ? bw : bw * 2 + ImGui::GetStyle().ItemSpacing.x;
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(player ? kSky300 : ImVec4(1, 1, 1, 0.85f), "%s", label);
+            ImGui::SameLine(rowX + std::max(avail - need, ImGui::GetItemRectSize().x + ImGui::GetStyle().ItemSpacing.x));
+            if (ImGui::Button("Go", ImVec2(bw, 0))) {
+                char w[48];
+                snprintf(w, sizeof w, "Teleport to %s %d", player ? "player" : "NPC", q.slot);
+                Teleport(q.pos[0], q.pos[1], q.pos[2], w);
+            }
+            if (!player) {
+                ImGui::SameLine();
+                if (ImGui::Button("Bring", ImVec2(bw, 0))) {
+                    gBringSlot = q.slot;
+                    if (!RunOnGameThread(BringOnGameThread, 0)) Log("Bring: the game isn't running frames right now");
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+    TouchScroll();
+    ImGui::EndChild();
+    Dim("Go: teleports you there (Back in Coordinates returns you). Bring: moves that NPC next to you on your screen; "
+        "the game may move it back.");
+}
+
 void TeleportSection() {
     std::string here = CurrentLevel();
     float pos[3];
@@ -687,6 +798,7 @@ void TeleportSection() {
     else Dim("Position: not readable right now");
     RealmSection(here);
     PoiSection(here, havePos ? pos : nullptr);
+    PeopleSection(havePos ? pos : nullptr);
     CoordSection(havePos ? pos : nullptr);
     QuickSection();
 }
