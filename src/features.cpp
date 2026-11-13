@@ -4035,10 +4035,12 @@ void DangerZoneTab() {
     }
     Dim("TheVoid's unnamed entry in the engine flame / engine idle sound code: the value it stores on, replaced.");
     if (Toggle("Unconfirmed byte 0x2F5D028 off", &unknownA,
-               "TheVoid's unnamed ca21b8 (1 normally). Nothing in 0.35.2 reads this address, so it likely does nothing."))
+               "TheVoid's unnamed ca21b8 (1 normally). The game reads it in 8 places (through its global offset table); "
+               "what it changes isn't worked out yet."))
         if (!SetSwitch("Byte 0x2F5D028", 0x2F5D028, !unknownA)) unknownA = !unknownA;
     if (Toggle("Unconfirmed byte 0x34660D9 on", &unknownB,
-               "TheVoid's unnamed 4ef60e data half (0 normally). Nothing in 0.35.2 reads it, so it likely does nothing."))
+               "TheVoid's unnamed 4ef60e data half (0 normally). The game reads it at 0x26C14E8, right before TheVoid's "
+               "paired code spot 0x26C14F0; what it changes isn't worked out yet."))
         if (!SetSwitch("Byte 0x34660D9", 0x34660D9, unknownB)) unknownB = !unknownB;
     Dim("Not added: TheVoid's 0x26C14F0 and 0x143482C patches (no patch value can be worked out for 0.35.2, and a "
         "wrong one would break the code there), and player.all_iaps (unlocks paid content without paying).");
@@ -4308,7 +4310,7 @@ char gVoidFilter[64] = "";
 void OtherOffsetsTab() {
     Dim("TheVoid 0.1.2's feature table (Apache-2.0, by Soyu): its names and Sky 0.35.1 addresses, ported to 0.35.2 "
         "by matching the game code that uses each one. The last column names the feature using each entry (0.30.0), or "
-        "why it was left out (rewards and server actions, or a port that couldn't be confirmed).");
+        "why it was left out (purchase unlocks, or a patch value that isn't known).");
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##vf", "search", gVoidFilter, sizeof gVoidFilter);
     if (ImGui::BeginTable("##void", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY |
