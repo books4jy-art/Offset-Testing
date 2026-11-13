@@ -46,5 +46,7 @@ jobs:
         run: |
           v=$(python3 -c "import json;c=json.load(open('config/config.json'));print('%d.%d.%d'%(c['majorVersion'],c['minorVersion'],c['patchVersion']))")
           if gh release view "v$v" >/dev/null 2>&1; then echo "v$v already released"; exit 0; fi
-          gh release create "v$v" build/libOffsetLab.so --target "$GITHUB_SHA" --title "Offset Lab v$v" \
-            --notes "Offset Lab v$v for Sky 0.35.2 (Canvas / Sky Modloader, arm64). Experimental: see the README."
+          # RELEASE_NOTES.md (when present) describes this version; otherwise the standard line
+          if [ -s RELEASE_NOTES.md ]; then notes_arg=(--notes-file RELEASE_NOTES.md); else
+            notes_arg=(--notes "Offset Lab v$v for Sky 0.35.2 (Canvas / Sky Modloader, arm64). Experimental: see the README."); fi
+          gh release create "v$v" build/libOffsetLab.so --target "$GITHUB_SHA" --title "Offset Lab v$v" "${notes_arg[@]}"
