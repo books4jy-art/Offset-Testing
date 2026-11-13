@@ -2749,16 +2749,21 @@ const CodePatch kUnlockPatch = {"Unlock all", 0xDFC174, 0xB40000C0u /* cbz x0, #
 // above never reached it). As TSM does, the call becomes a NOP: x0 keeps its non-null argument, so the item counts
 // as owned in the closet. Restored with the first patch.
 const CodePatch kUnlockClosetPatch = {"Unlock all (closet)", 0x1BBC3EC, 0x97CCAC43u /* bl 0xee74f8 */, kNop};
-// Spirit tree prerequisites: ConstellationShopButton (0x1541698) checks each node in two steps:
-//   0x1543ECC: bl HasUnlock — is THIS item owned? (name at object +0x90)
-//   0x1543ED0: tbnz w0, #0, DDC — if yes → owned path (skip)
-//   0x1543EDC: bl HasUnlock — is the PREREQUISITE item owned? (name at object +0xa8)
-//   0x1543EE0: tbz w0, #0, DDC — if no → locked path (can't select)
-//   0x1543EE4: b purchasable  — prerequisite met → can buy
-// NOPing the tbz at 0x1543EE0 makes unowned nodes always reach the purchasable path regardless of prerequisites.
-// The ownership check (0x1543ED0 tbnz) is untouched, so items you already own still show as owned.
-// The server already accepts out-of-order purchases (the carrying-spirits mechanic uses this path).
-const CodePatch kSpiritTreePrereqPatch = {"Spirit tree prereqs", 0x1543EE0, 0x3607F7E0u /* tbz w0, #0, #0x1543ddc */, kNop};
+// Spirit tree prerequisites. The game asks "can this node be bought?" as: not owned (HasUnlock 0xDFC144 on the
+// node's name, object +0x90) AND its prerequisite owned (HasUnlock on +0xa8). That check is in five places:
+//   0x1543D20 loops over a spirit's nodes and returns 1 if any can be bought (the "something to buy" marker); the
+//     tbz at 0x1543EE0 skips a node whose prerequisite isn't owned — NOPed, any unowned node counts.
+//   0x15384F8, 0x1EA5BB0, 0x1EA8A44, 0x25B08F0 answer it for one node (0x1EA5BB0 stores the answer in the node's
+//     button, +0x2d2); the bl HasUnlock(prerequisite) becomes mov w0,#1, so "not owned" alone decides.
+// 0.37.2 patched only 0x1543EE0, which changes the marker but not the nodes (the user reported it didn't work).
+// The ownership checks are untouched. Purchases still go to the server, which may refuse an out-of-order node.
+const CodePatch kSpiritTreePrereqPatches[] = {
+    {"Spirit tree prereqs (marker)", 0x1543EE0, 0x3607F7E0u /* tbz w0, #0, #0x1543ddc */, kNop},
+    {"Spirit tree prereqs (node 1)", 0x15384F8, 0x97E30F13u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (node 2)", 0x1EA5BB0, 0x97BD5965u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (node 3)", 0x1EA8A44, 0x97BD4DC0u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (node 4)", 0x25B08F0, 0x97A12E15u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+};
 
 // Read all messages: the chat bubble code (0x1478CAC..0x1478CE8) works out in w22 whether a message's text may be
 // shown (table/friend checks). The two places that can make it 0 (mov w22, wzr / orr w22, w0, w8) give 1 instead;
@@ -3529,13 +3534,18 @@ void SocialSection() {
     Section("SPIRIT TREES", nullptr);
     static bool spiritFree = false;
     if (Toggle("Skip spirit tree prerequisites (experimental)", &spiritFree,
-               "Spirit trees require buying lower nodes before higher ones can be selected. This bypasses that "
-               "client-side check (0x1543EE0) so you can select and buy any node directly. The server already accepts "
-               "out-of-order purchases (the carrying-spirits mechanic uses this). Prices, currency deductions and "
-               "ownership stay normal. Applies to all spirit trees (season, past-season). Off: the game's code put "
-               "back.")) {
-        if (!SetCodePatch(kSpiritTreePrereqPatch, spiritFree)) spiritFree = !spiritFree;
-        else Log("Spirit tree prerequisites %s", spiritFree ? "skipped" : "back to normal");
+               "Spirit trees make you buy lower nodes before higher ones. This switch changes the game's own "
+               "\"can this node be bought\" check (5 places) so a node only has to be unowned. Buying still goes "
+               "to the server, which may refuse a node whose prerequisite you don't own. Close and reopen the "
+               "spirit's tree after switching. Off: the game's code put back.")) {
+        bool ok = true;
+        for (const CodePatch& p : kSpiritTreePrereqPatches) ok = SetCodePatch(p, spiritFree) && ok;
+        if (!ok) {
+            for (const CodePatch& p : kSpiritTreePrereqPatches) SetCodePatch(p, false);
+            spiritFree = false;
+        } else {
+            Log("Spirit tree prerequisites %s", spiritFree ? "skipped" : "back to normal");
+        }
     }
 
     Section("OTHER", nullptr);
