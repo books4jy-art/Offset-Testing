@@ -2775,7 +2775,15 @@ const CodePatch kSpiritTreePrereqPatches[] = {
     {"Spirit tree prereqs (look 1)", 0x153D60C, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
     {"Spirit tree prereqs (look 2)", 0x153EB60, 0x2A0003F5u /* mov w21, w0 */, 0x2A1F03F5u /* mov w21, wzr */},
     {"Spirit tree prereqs (look 3)", 0x153D8C8, 0x942C07CFu /* bl 0x203f804 */, 0x2A1F03E0u /* mov w0, wzr */},
+    // 0.37.6 diagnostic (seasonal spirit, grayed node): the tree calls 0x15405C8 with a tier (w2 = 1, 3864 calls),
+    // so the parent check is skipped and node tier (+0xb4) > your tier locks it instead. Seasonal trees are tiered
+    // (trust, "trust_error_tier_locked"); your tier is 0x24A5248 on the relationship object, kept at menu +0x83c.
+    {"Spirit tree tiers (available)", 0x1540824, 0x54FFF068u /* b.hi 0x1540630 */, kNop},
+    {"Spirit tree tiers (locked msg)", 0x24EB8E0, 0x540002A2u /* b.hs 0x24eb934 */, 0x14000015u /* b 0x24eb934 */},
+    {"Spirit tree tiers (node check)", 0x24E77FC, 0x540000E9u /* b.ls 0x24e7818 */, 0x14000007u /* b 0x24e7818 */},
 };
+// Plus the game's own byte 0x34B4600 (the "All friendship nodes" switch): with it set, the menu doesn't gray nodes
+// above your tier (0x24E9098 sets display flag 0x20 only while it's 0) and treats them as unlocked (0x24F0898).
 
 // Read all messages: the chat bubble code (0x1478CAC..0x1478CE8) works out in w22 whether a message's text may be
 // shown (table/friend checks). The two places that can make it 0 (mov w22, wzr / orr w22, w0, w8) give 1 instead;
@@ -3538,23 +3546,27 @@ void SocialSection() {
     // 0.30.0: TheVoid sets this one together with 0x3455E25. The friendship tree code (0x24F0898) treats a node past
     // the unlocked count as locked only while it's 0.
     static bool allNodes = false;
+    static bool spiritFree = false;  // the spirit tree switch below (shares 0x34B4600)
     if (Toggle("Show every friendship node unlocked (experimental)", &allNodes,
                "TheVoid's second friendship switch (0x34B4600): the tree treats nodes past your level as unlocked on "
                "your screen. The server still decides what you can use."))
-        if (!SetSwitch("All friendship nodes", 0x34B4600, allNodes)) allNodes = !allNodes;
+        if ((allNodes || !spiritFree) && !SetSwitch("All friendship nodes", 0x34B4600, allNodes)) allNodes = !allNodes;
 
     Section("SPIRIT TREES", nullptr);
-    static bool spiritFree = false;
     if (Toggle("Skip spirit tree prerequisites (experimental)", &spiritFree,
                "Spirit trees make you buy lower nodes before higher ones. This switch changes the game's own "
-               "\"can this node be bought\" and \"is the node before it owned\" checks (10 places) so a node only "
-               "has to be unowned. Buying still goes "
+               "\"can this node be bought\", \"is the node before it owned\" and tier checks (13 places, plus the "
+               "game's tier byte 0x34B4600, shared with the friendship switch above) so a node only has to be "
+               "unowned. Buying still goes "
                "to the server, which may refuse a node whose prerequisite you don't own. Close and reopen the "
                "spirit's tree after switching. Off: the game's code put back.")) {
         bool ok = true;
         for (const CodePatch& p : kSpiritTreePrereqPatches) ok = SetCodePatch(p, spiritFree) && ok;
+        // The tier byte is shared with the friendship switch above: only cleared when that one is off too.
+        if (ok && (spiritFree || !allNodes)) ok = SetSwitch("Spirit tree tiers", 0x34B4600, spiritFree);
         if (!ok) {
             for (const CodePatch& p : kSpiritTreePrereqPatches) SetCodePatch(p, false);
+            if (!allNodes) SetSwitch("Spirit tree tiers", 0x34B4600, false);
             spiritFree = false;
         } else {
             Log("Spirit tree prerequisites %s", spiritFree ? "skipped" : "back to normal");
