@@ -3572,17 +3572,21 @@ void SocialSection() {
         {0x1538408, "can buy (node 1)"},              {0x1EA5790, "can buy (node 2)"},
         {0x1EA898C, "can buy (node 3)"},              {0x25B07D0, "can buy (node 4)"},
         {0x25010B4, "SpiritShopMenu"},
+        // 0.37.6: more menus (seasonal spirit tree, grayed node): functions using "spirit_shop_item_viewed" /
+        // "spiritshop_menu_opened", the season pass purchase button texts, and ConstellationShopButton.
+        {0xFABCD8, "spirit shop viewed 1"},           {0xFB0464, "spirit shop viewed 2"},
+        {0x1669860, "season pass button"},            {0x15414E0, "ConstellationShopButton"},
     };
-    ImGui::TextWrapped("Still locked? Tap Start, open the spirit's tree, tap a locked node, then tap Log and send "
-                       "the log. It shows which game checks ran.");
+    ImGui::TextWrapped("Still locked? Tap Start, open the spirit's tree, tap a locked node, come back here and tap "
+                       "Log (Stop logs too), then send the log. It shows which game checks ran.");
     if (ImGui::Button("Start tree diagnostic")) {
         for (const TreeCheck& c : kTreeChecks) {
             std::string err;
             if (!StartWatch(c.at, c.what, err) && err != "already watched") Log("Tree diagnostic %s: %s", c.what, err.c_str());
         }
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Log##treediag")) {
+    // 0.37.6: Stop used to drop the counts (the user tapped Stop, then Log: nothing). Both buttons now log them.
+    auto logTreeCounts = [&]() {
         auto ws = Watches();
         int n = 0;
         for (const TreeCheck& c : kTreeChecks)
@@ -3594,10 +3598,14 @@ void SocialSection() {
                     n++;
                 }
         Log("Tree diagnostic: spirit switch %s, %d watches", spiritFree ? "on" : "off", n);
-    }
+    };
     ImGui::SameLine();
-    if (ImGui::Button("Stop##treediag"))
+    if (ImGui::Button("Log##treediag")) logTreeCounts();
+    ImGui::SameLine();
+    if (ImGui::Button("Stop##treediag")) {
+        logTreeCounts();
         for (const TreeCheck& c : kTreeChecks) StopWatch(c.at);
+    }
 
     Section("OTHER", nullptr);
     if (Toggle("Audience mode (experimental)", &X.audience,
