@@ -3557,8 +3557,8 @@ void SocialSection() {
                "Spirit trees make you buy lower nodes before higher ones. This switch changes the game's own "
                "\"can this node be bought\", \"is the node before it owned\" and tier checks (13 places, plus the "
                "game's tier byte 0x34B4600, shared with the friendship switch above) so a node only has to be "
-               "unowned. Buying still goes "
-               "to the server, which may refuse a node whose prerequisite you don't own. Close and reopen the "
+               "unowned, so you can select it. The server refuses buying a node out of order or above your tier "
+               "(the game then shows \"game data corrupted\"; restart the game to clear it). Close and reopen the "
                "spirit's tree after switching. Off: the game's code put back.")) {
         bool ok = true;
         for (const CodePatch& p : kSpiritTreePrereqPatches) ok = SetCodePatch(p, spiritFree) && ok;
