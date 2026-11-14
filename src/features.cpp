@@ -3560,6 +3560,44 @@ void SocialSection() {
             Log("Spirit tree prerequisites %s", spiritFree ? "skipped" : "back to normal");
         }
     }
+    // Diagnostic (0.37.5): 0.37.3/0.37.4 applied cleanly but the tree still showed nodes locked, so it isn't known
+    // which code draws the tree the user opens. Watch the candidate functions (all real function entries: bl
+    // targets or vtable entries) and log how often each ran.
+    struct TreeCheck { uint32_t at; const char* what; };
+    static const TreeCheck kTreeChecks[] = {
+        {0x15405C8, "tree: node available"},          {0x153CB90, "tree: tap handler"},
+        {0x153D25C, "tree: node look 1"},             {0x153EAC8, "tree: node look 2"},
+        {0x203F804, "node not owned"},                {0x203D4E8, "node quest/ap06 lock"},
+        {0x24EB894, "trust tier lock"},               {0x1543D20, "spirit has something to buy"},
+        {0x1538408, "can buy (node 1)"},              {0x1EA5790, "can buy (node 2)"},
+        {0x1EA898C, "can buy (node 3)"},              {0x25B07D0, "can buy (node 4)"},
+        {0x25010B4, "SpiritShopMenu"},
+    };
+    ImGui::TextWrapped("Still locked? Tap Start, open the spirit's tree, tap a locked node, then tap Log and send "
+                       "the log. It shows which game checks ran.");
+    if (ImGui::Button("Start tree diagnostic")) {
+        for (const TreeCheck& c : kTreeChecks) {
+            std::string err;
+            if (!StartWatch(c.at, c.what, err) && err != "already watched") Log("Tree diagnostic %s: %s", c.what, err.c_str());
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Log##treediag")) {
+        auto ws = Watches();
+        int n = 0;
+        for (const TreeCheck& c : kTreeChecks)
+            for (const auto& w : ws)
+                if (w.offset == c.at) {
+                    Log("Tree diagnostic 0x%X %s: %llu calls, args %llx %llx %llx", c.at, c.what,
+                        (unsigned long long)w.calls, (unsigned long long)w.args[0], (unsigned long long)w.args[1],
+                        (unsigned long long)w.args[2]);
+                    n++;
+                }
+        Log("Tree diagnostic: spirit switch %s, %d watches", spiritFree ? "on" : "off", n);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Stop##treediag"))
+        for (const TreeCheck& c : kTreeChecks) StopWatch(c.at);
 
     Section("OTHER", nullptr);
     if (Toggle("Audience mode (experimental)", &X.audience,
