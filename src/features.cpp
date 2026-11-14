@@ -2756,13 +2756,25 @@ const CodePatch kUnlockClosetPatch = {"Unlock all (closet)", 0x1BBC3EC, 0x97CCAC
 //   0x15384F8, 0x1EA5BB0, 0x1EA8A44, 0x25B08F0 answer it for one node (0x1EA5BB0 stores the answer in the node's
 //     button, +0x2d2); the bl HasUnlock(prerequisite) becomes mov w0,#1, so "not owned" alone decides.
 // 0.37.2 patched only 0x1543EE0, which changes the marker but not the nodes (the user reported it didn't work).
-// The ownership checks are untouched. Purchases still go to the server, which may refuse an out-of-order node.
+// 0.37.3 added the four per-node checks above; the tree still showed nodes locked (log 2026-11-14), because the
+// tree itself uses another test: the node's parent id (node +0x5c) must be in your owned list (account +0x730,
+// lookup 0xEE02CC / "not owned" 0x203F804). 0.37.4 also changes those five places:
+//   0x1540810 in the node availability check 0x15405C8: parent not owned → return 0; now goes on as if owned.
+//   0x153CCD0 (node tap handler), 0x153D60C, 0x153EB60 (node display): the "parent not owned" flag → 0.
+//   0x153D8C8 (display, two steps ahead): the grandparent's "not owned" answer → 0 (owned).
+// The ownership checks of the node itself are untouched. Purchases still go to the server, which may refuse an
+// out-of-order node.
 const CodePatch kSpiritTreePrereqPatches[] = {
     {"Spirit tree prereqs (marker)", 0x1543EE0, 0x3607F7E0u /* tbz w0, #0, #0x1543ddc */, kNop},
     {"Spirit tree prereqs (node 1)", 0x15384F8, 0x97E30F13u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
     {"Spirit tree prereqs (node 2)", 0x1EA5BB0, 0x97BD5965u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
     {"Spirit tree prereqs (node 3)", 0x1EA8A44, 0x97BD4DC0u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
     {"Spirit tree prereqs (node 4)", 0x25B08F0, 0x97A12E15u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (tree)", 0x1540810, 0x17FFFF89u /* b 0x1540634 */, 0x17FFFF81u /* b 0x1540614 */},
+    {"Spirit tree prereqs (tap)", 0x153CCD0, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
+    {"Spirit tree prereqs (look 1)", 0x153D60C, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
+    {"Spirit tree prereqs (look 2)", 0x153EB60, 0x2A0003F5u /* mov w21, w0 */, 0x2A1F03F5u /* mov w21, wzr */},
+    {"Spirit tree prereqs (look 3)", 0x153D8C8, 0x942C07CFu /* bl 0x203f804 */, 0x2A1F03E0u /* mov w0, wzr */},
 };
 
 // Read all messages: the chat bubble code (0x1478CAC..0x1478CE8) works out in w22 whether a message's text may be
@@ -3535,7 +3547,8 @@ void SocialSection() {
     static bool spiritFree = false;
     if (Toggle("Skip spirit tree prerequisites (experimental)", &spiritFree,
                "Spirit trees make you buy lower nodes before higher ones. This switch changes the game's own "
-               "\"can this node be bought\" check (5 places) so a node only has to be unowned. Buying still goes "
+               "\"can this node be bought\" and \"is the node before it owned\" checks (10 places) so a node only "
+               "has to be unowned. Buying still goes "
                "to the server, which may refuse a node whose prerequisite you don't own. Close and reopen the "
                "spirit's tree after switching. Off: the game's code put back.")) {
         bool ok = true;

@@ -1,11 +1,10 @@
-Offset Lab v0.37.3 for Sky 0.35.2 (Canvas / Sky Modloader, arm64). Experimental: see the README.
+Offset Lab v0.37.4 for Sky 0.35.2 (Canvas / Sky Modloader, arm64). Experimental: see the README.
 
-**Fixed: Skip spirit tree prerequisites (experimental)**
+**Fixed again: Skip spirit tree prerequisites (experimental)**
 - Where: Offset Lab → **Social** tab → **SPIRIT TREES** → **"Skip spirit tree prerequisites (experimental)"**.
   It's off every time the game starts.
-- 0.37.2 changed only the game's "this spirit has something to buy" check, not the nodes themselves, so locked
-  nodes stayed locked. The game asks "can this node be bought?" in five places; the switch now changes all five
-  so a node only has to be unowned.
-- Switch it on, then close and reopen the spirit's tree.
+- 0.37.3 still showed nodes locked: the tree also checks whether the node before it is owned, in five more
+  places (availability, tapping a node, and three display spots). The switch now changes all ten.
+- Switch it on **before** opening the spirit's tree (or close and reopen the tree).
 - Buying still goes to the server, which may refuse a node whose lower nodes you don't own.
-- If any of the five spots doesn't match Sky 0.35.2, nothing is changed and the switch stays off (see the log).
+- If any of the ten spots doesn't match Sky 0.35.2, nothing is changed and the switch stays off (see the log).
