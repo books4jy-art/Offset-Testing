@@ -28,8 +28,8 @@
 namespace lab {
 namespace {
 
-constexpr uint32_t kPlayKey = 0x252B188, kPlayKeyFirst = 0xD10343FF;
-constexpr uint32_t kStopNote = 0x253239C, kStopNoteFirst = 0xD10283FF;
+constexpr uint32_t kPlayKey = 0x25952C0, kPlayKeyFirst = 0xD10343FF;
+constexpr uint32_t kStopNote = 0x259DAD0, kStopNoteFirst = 0xD10283FF;
 constexpr int kKeys = 15;
 
 std::atomic<uintptr_t> gKey[kKeys];
@@ -57,7 +57,7 @@ bool CheckFunctions() {
 
 bool StartLearning() {
     if (!CheckFunctions()) {
-        Log("Custom songs: the game's key functions aren't what 0.35.2 has; not hooked");
+        Log("Custom songs: the game's key functions aren't what 0.35.5 has; not hooked");
         return false;
     }
     if (!gHooked) {
@@ -239,7 +239,7 @@ void CustomSongsSection() {
     ImGui::BeginDisabled(gSel < 0 || learned == 0);
     if (ImGui::Button(gPlaying ? "Restart" : "Play")) {
         if (CheckFunctions()) gPlaying = true, gStart = ImGui::GetTime(), gNext = 0;
-        else Log("Custom songs: the game's key functions aren't what 0.35.2 has");
+        else Log("Custom songs: the game's key functions aren't what 0.35.5 has");
     }
     ImGui::EndDisabled();
     ImGui::SameLine();

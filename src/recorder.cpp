@@ -32,7 +32,7 @@ namespace lab {
 
 namespace {
 
-constexpr uintptr_t kEventStart = 0x1717C8C;
+constexpr uintptr_t kEventStart = 0x17505B4;
 // its first four instructions: sub sp, sp, #0x30 / stp x29, x30, [sp, #0x10] / str x19, [sp, #0x20] /
 // add x29, sp, #0x10 (Dobby rewrites the first 16 bytes; none of them depend on where they run)
 constexpr uint32_t kEventStartCode[4] = {0xD100C3FF, 0xA9017BFD, 0xF90013F3, 0x910043FD};
@@ -197,16 +197,16 @@ void OnEventStart(void*, DobbyRegisterContext* ctx) {
 bool InstallHook(std::string& error) {
     if (gHook == 1) return true;
     if (gHook == -1) {
-        error = "the game's event start isn't what 0.35.2 has (see Log)";
+        error = "the game's event start isn't what 0.35.5 has (see Log)";
         return false;
     }
     uintptr_t base = GameBase();
     uint32_t code[4] = {};
     if (!base || !ReadMemory(base + kEventStart, code, sizeof code) || memcmp(code, kEventStartCode, sizeof code) != 0) {
-        Log("Recorder: the event start at 0x%zX isn't what 0.35.2 has (%08X %08X %08X %08X); not hooked",
+        Log("Recorder: the event start at 0x%zX isn't what 0.35.5 has (%08X %08X %08X %08X); not hooked",
             (size_t)kEventStart, code[0], code[1], code[2], code[3]);
         gHook = -1;
-        error = "the game's event start isn't what 0.35.2 has (see Log)";
+        error = "the game's event start isn't what 0.35.5 has (see Log)";
         return false;
     }
     if (DobbyInstrument(reinterpret_cast<void*>(base + kEventStart), OnEventStart) != 0) {
@@ -298,7 +298,7 @@ uint64_t RecorderDropped() { return gDropped; }
 
 std::string RecorderStatus() {
     char b[200];
-    if (gHook == -1) snprintf(b, sizeof b, "Not available: the game's event start isn't what 0.35.2 has");
+    if (gHook == -1) snprintf(b, sizeof b, "Not available: the game's event start isn't what 0.35.5 has");
     else if (!gBuilt) snprintf(b, sizeof b, "Hook at 0x%zX, placed when you press Start", (size_t)kEventStart);
     else snprintf(b, sizeof b, "Hook at 0x%zX  ·  %d types known by id  ·  %d with values", (size_t)kEventStart,
                   gMapped, gPlanned);

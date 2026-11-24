@@ -36,7 +36,7 @@ const ImVec4 kAmber300(0.988f, 0.827f, 0.302f, 1.f);
 // ---------------------------------------------------------------- AccountAddCurrency native hook
 // currencyType is kUnknown in the type table: the game has no Lua setter for it, so we write the byte directly into the
 // event object before its handler reads it. The handler at 0xf6c620 reads currencyType as uint8_t from event+0x4C.
-constexpr uintptr_t kAddCurrencyHandler = 0xF6C620;
+constexpr uintptr_t kAddCurrencyHandler = 0xFA330C;
 constexpr uint32_t kAddCurrencyFirstInstr = 0xA9BD7BFD;  // stp x29, x30, [sp, #-0x30]!
 
 struct CurrencyEntry { const char* name; uint8_t value; };
@@ -474,11 +474,11 @@ std::string SpellLabel(const char* id) {
 
 // The patch for Surface Friction: the game's "super slidey" switch (a byte) and the two instructions that load the
 // slippery value (0.2) it uses, at 0x249E524 / 0x249E528 (0.35.2).
-constexpr uint32_t kSlideySwitch = 0x34AFCEC;
-constexpr uint32_t kSlideyValueAt = 0x249E524;
+constexpr uint32_t kSlideySwitch = 0x352F42C;
+constexpr uint32_t kSlideyValueAt = 0x2509D64;
 constexpr uint32_t kSlideyOriginal[2] = {0x529999A8, 0x72A7C988};  // mov w8,#0xcccd; movk w8,#0x3e4c,lsl #16
 // The game's "disable terrain" switch (a byte); TheVoid's world.hide_terrain, 0x3169CDC in 0.35.1.
-constexpr uint32_t kTerrainSwitch = 0x3169CEC;
+constexpr uint32_t kTerrainSwitch = 0x31E64EC;
 
 struct Features {
     // transform
@@ -534,7 +534,7 @@ bool SetSwitch(const char* what, uint32_t off, bool on) {
 
 // No collision: the call at 0x296CAD0 fills the list of things you could collide with; its count is set to 0 just
 // before (0x296CAA0), so skipping the call (a NOP) leaves the list empty.
-constexpr uint32_t kCollisionCallAt = 0x296CAD0;
+constexpr uint32_t kCollisionCallAt = 0x2A01ED0;
 constexpr uint32_t kCollisionCall = 0x94000C7C;  // bl 0x296FCC0
 constexpr uint32_t kNop = 0xD503201F;
 
@@ -553,9 +553,9 @@ void FpvHook(void*, DobbyRegisterContext* ctx) {
 bool SetFirstPerson(bool on) {
     if (on && !gFpvHooked) {
         uint32_t first = 0;
-        uintptr_t a = GameBase() + 0x29213EC;
+        uintptr_t a = GameBase() + 0x29B6000;
         if (!GameBase() || !ReadMemory(a, &first, 4) || first != 0xD10343FFu) {
-            Log("First-person view: the camera function isn't what 0.35.2 has (0x%08X)", first);
+            Log("First-person view: the camera function isn't what 0.35.5 has (0x%08X)", first);
             return false;
         }
         if (DobbyInstrument(reinterpret_cast<void*>(a), FpvHook) != 0) {
@@ -572,7 +572,7 @@ bool SetFirstPerson(bool on) {
 bool SetNoCollision(bool on) {
     uint32_t cur = 0;
     if (!GameBase() || !ReadMemory(GameBase() + kCollisionCallAt, &cur, 4) || (cur != kCollisionCall && cur != kNop)) {
-        Log("No collision: the game code isn't what 0.35.2 has (0x%08X); not changed", cur);
+        Log("No collision: the game code isn't what 0.35.5 has (0x%08X); not changed", cur);
         return false;
     }
     uint32_t v = on ? kNop : kCollisionCall;
@@ -790,8 +790,8 @@ struct More {
     float walkSpeed = 3.f, walkDir = 0.f;
 } M;
 
-constexpr uint32_t kAvatarHeight = 0x313970C;  // TheVoid's player.avatar_height (0x31396FC in 0.35.1), -3..3
-constexpr uint32_t kAvatarScale = 0x3139710;   // TheVoid's player.avatar_scale (0x3139700 in 0.35.1), -3..3
+constexpr uint32_t kAvatarHeight = 0x31B562C;  // TheVoid's player.avatar_height (0x31396FC in 0.35.1), -3..3
+constexpr uint32_t kAvatarScale = 0x31B5630;   // TheVoid's player.avatar_scale (0x3139700 in 0.35.1), -3..3
 
 void SetFloatVar(const char* what, uint32_t off, float v) {
     float cur = 0;
@@ -889,15 +889,15 @@ void TheVoidPlayerSection() {
     Section("MORE MOVEMENT (game values)", "TheVoid's player values. Off / Reset puts the game's value back.");
     static bool noGravity = false;
     if (Toggle("No gravity (TheVoid's switch, experimental)", &noGravity,
-               "Clears the flag TheVoid calls no-gravity (0x2FF4764). In 0.35.2 the movement code then adds its own "
+               "Clears the flag TheVoid calls no-gravity (0x30627EC). In 0.35.2 the movement code then adds its own "
                "position step each frame; what that feels like in game isn't confirmed."))
-        if (!SetSwitch("No gravity", 0x2FF4764, !noGravity)) noGravity = !noGravity;
+        if (!SetSwitch("No gravity", 0x30627EC, !noGravity)) noGravity = !noGravity;
     static float run = 3.5f;
     ImGui::TextUnformatted("Base run speed");
     if (Slider("baserun", &run, 0.5f, 30.f, 3.5f, "%.2f")) {
         float cur = 0;
-        if (GameBase() && ReadMemory(GameBase() + 0x2FF47A4, &cur, 4) && std::isfinite(cur) && cur > 0.f && cur < 1000.f)
-            WriteGameMemory(0x2FF47A4, &run, 4), Log("Base run speed %.2f", run);
+        if (GameBase() && ReadMemory(GameBase() + 0x306282C, &cur, 4) && std::isfinite(cur) && cur > 0.f && cur < 1000.f)
+            WriteGameMemory(0x306282C, &run, 4), Log("Base run speed %.2f", run);
         else Log("Base run speed: the value doesn't look right; not changed");
     }
 }
@@ -1223,7 +1223,7 @@ void OutfitsSection() {
     static bool ownOutfit = false;
     if (Toggle("Always show my own outfit (experimental)", &ownOutfit,
                "Where a level or event dresses you in something else, your own outfit stays (on your screen)."))
-        if (!SetSwitch("Always own outfit", 0x3139858, ownOutfit)) ownOutfit = !ownOutfit;
+        if (!SetSwitch("Always own outfit", 0x31B5848, ownOutfit)) ownOutfit = !ownOutfit;
 
     Section("EDIT OUTFITS", "Your avatar's height and size (TheVoid's height/scale values; the game holds them to "
                             "-3..3). Reset = 0.");
@@ -1408,13 +1408,13 @@ void CameraSection() {
         "removed: it crashed the game when switched off (it has settings Offset Lab can't see to fill in).");
     static bool freeZoom = false;
     if (Toggle("Unlimited zoom", &freeZoom,
-               "Pinch the camera as far in or out as you like (the camera's zoom clamp store, 0x291F078, skipped; as "
+               "Pinch the camera as far in or out as you like (the camera's zoom clamp store, 0x29B69D4, skipped; as "
                "in TSM). Off: the game's code put back."))
         if (!SetFreeZoom(freeZoom)) freeZoom = !freeZoom;
     static bool fpv = false;
     if (Toggle("First-person view", &fpv,
                "The camera sits in your avatar's head: its distance (+0x5A8) is set to 0 each time the game's camera "
-               "update (0x29213EC) runs, as TSM does. Experimental. Off: normal camera."))
+               "update (0x29B6000) runs, as TSM does. Experimental. Off: normal camera."))
         if (!SetFirstPerson(fpv)) fpv = false;
 }
 
@@ -1425,23 +1425,23 @@ void CameraSection() {
 // is changed. Each value is checked to be a finite, sane float before writing; Reset writes the default back.
 struct EnvVar { const char* label; uint32_t at; float lo, hi, def; bool needsOverride; };
 const EnvVar kEnv[] = {
-    {"Exposure", 0x2DFFBEC, 0.f, 4.f, 1.f, false},       {"Sun intensity", 0x2DFFBF0, 0.f, 4.f, 1.f, false},
-    {"Sun height", 0x2DFFBF4, -90.f, 90.f, 45.f, false}, {"Sun sideways", 0x30B00B8, 0.f, 360.f, 0.f, true},
-    {"Sun size", 0x2DFFBF8, 0.f, 5.f, 1.f, false},       {"Sun to moon", 0x30B00BC, 0.f, 1.f, 0.f, true},
-    {"Eclipse", 0x30B00C0, 0.f, 1.f, 0.f, true},         {"Moon phase", 0x2DFFBFC, 0.f, 1.f, 0.5f, false},
-    {"Draw distance", 0x2DFFBE8, 1000.f, 50000.f, 15000.f, false},
-    {"Underwater bloom", 0x2DFFC00, 0.f, 4.f, 1.f, false}, {"Fog density", 0x2DFFBDC, 0.f, 4.f, 1.f, false},
-    {"Fog height", 0x2DFFBE4, 0.f, 2.f, 0.1f, false},    {"Fog brightness", 0x2DFFBD4, 0.f, 2.f, 0.8f, false},
-    {"Atmosphere density", 0x2DFFBE0, 0.f, 4.f, 1.f, false},
-    {"Point light (unverified)", 0x2DFFC04, 0.f, 4.f, 1.f, false},
+    {"Exposure", 0x2E9D38C, 0.f, 4.f, 1.f, false},       {"Sun intensity", 0x2E9D390, 0.f, 4.f, 1.f, false},
+    {"Sun height", 0x2E9D394, -90.f, 90.f, 45.f, false}, {"Sun sideways", 0x312B1D8, 0.f, 360.f, 0.f, true},
+    {"Sun size", 0x2E9D398, 0.f, 5.f, 1.f, false},       {"Sun to moon", 0x312B1DC, 0.f, 1.f, 0.f, true},
+    {"Eclipse", 0x312B1E0, 0.f, 1.f, 0.f, true},         {"Moon phase", 0x2E9D39C, 0.f, 1.f, 0.5f, false},
+    {"Draw distance", 0x2E9D388, 1000.f, 50000.f, 15000.f, false},
+    {"Underwater bloom", 0x2E9D3A0, 0.f, 4.f, 1.f, false}, {"Fog density", 0x2E9D37C, 0.f, 4.f, 1.f, false},
+    {"Fog height", 0x2E9D384, 0.f, 2.f, 0.1f, false},    {"Fog brightness", 0x2E9D374, 0.f, 2.f, 0.8f, false},
+    {"Atmosphere density", 0x2E9D380, 0.f, 4.f, 1.f, false},
+    {"Point light (unverified)", 0x2E9D3A4, 0.f, 4.f, 1.f, false},
     // 0.30.0 (TheVoid's unnamed entries; read by the fog-distance code at 0xFA2128): where fog starts, the furthest
     // distance it uses (capped at 256000 there), and the height it's measured from; the falloff is an override value.
-    {"Fog start distance", 0x2DFFBCC, 0.f, 1000.f, 40.f, false},
-    {"Fog max distance", 0x2DFFBD0, 100.f, 50000.f, 4000.f, false},
-    {"Fog base height", 0x2DFFBD8, -200.f, 1000.f, 0.5f, false},
-    {"Fog height falloff (override)", 0x30B00B4, 0.f, 1.f, 0.f, true},
+    {"Fog start distance", 0x2E9D36C, 0.f, 1000.f, 40.f, false},
+    {"Fog max distance", 0x2E9D370, 100.f, 50000.f, 4000.f, false},
+    {"Fog base height", 0x2E9D378, -200.f, 1000.f, 0.5f, false},
+    {"Fog height falloff (override)", 0x312B1D4, 0.f, 1.f, 0.f, true},
 };
-constexpr uint32_t kEnvOverride = 0x30B00A8;
+constexpr uint32_t kEnvOverride = 0x312B1C8;
 float gEnv[IM_ARRAYSIZE(kEnv)];
 bool gEnvRead = false;
 
@@ -1486,7 +1486,7 @@ void SkySection() {
     if (Toggle("Height fog (override)", &heightFog,
                "The environment override's fog-by-distance switch (TheVoid's unnamed entry). Turns the override on.")) {
         if (heightFog) SetSwitch("Environment override", kEnvOverride, true);
-        if (!SetSwitch("Height fog", 0x30B00AC, heightFog)) heightFog = !heightFog;
+        if (!SetSwitch("Height fog", 0x312B1CC, heightFog)) heightFog = !heightFog;
     }
     if (ImGui::Button("Reset all environment")) {
         for (int i = 0; i < (int)IM_ARRAYSIZE(kEnv); i++) gEnv[i] = kEnv[i].def, EnvWrite(kEnv[i], kEnv[i].def);
@@ -1579,10 +1579,10 @@ void EffectsSection() {
 // the game's audio menus. Song and sound ids are the game's own names (the Aurora songs as TSM lists them).
 struct InstrSwitch { const char* label; uint32_t at; bool on; const char* help; };
 InstrSwitch gInstr[] = {
-    {"Reverb", 0x34574F0, false, "Adds reverb to instruments."},
-    {"Auto-play sheets", 0x34B5890, false, "Instruments play the open sheet music by themselves."},
-    {"Easy mode", 0x34B58A0, false, "The game's easy instrument mode."},
-    {"Radial layout", 0x34B58BC, false, "The radial key layout instead of the grid."},
+    {"Reverb", 0x34D5A80, false, "Adds reverb to instruments."},
+    {"Auto-play sheets", 0x3535800, false, "Instruments play the open sheet music by themselves."},
+    {"Easy mode", 0x3535810, false, "The game's easy instrument mode."},
+    {"Radial layout", 0x353582C, false, "The radial key layout instead of the grid."},
 };
 float gMusicVol = 1.f, gMusicKey = 0.f, gSoundVol = 1.f;
 char gMusicId[64] = "", gSoundId[64] = "";
@@ -1996,40 +1996,40 @@ void MenusSection() {
 // "Enable" switches default to 1 (hiding writes 0); the rest default to 0. Every write checks the byte holds 0 or 1.
 struct GameSwitch { const char* label; uint32_t at; uint8_t normal; const char* help; bool on; };
 GameSwitch gWorldSw[] = {
-    {"Hide clouds", 0x2F5F2C8, 1, "", false},          {"Hide water", 0x2FC862C, 1, "", false},
-    {"Hide ocean", 0x2FC8630, 1, "", false},           {"Hide sun", 0x3169CF6, 0, "", false},
-    {"Hide avatars", 0x3169CF0, 0, "", false},         {"Hide objects", 0x3169CF1, 0, "", false},
-    {"Hide object edges (skirts)", 0x3169CF2, 0, "", false}, {"Hide models", 0x3169CF3, 0, "", false},
-    {"Disable lights", 0x33EDB5C, 0, "", false},       {"Hide game UI", 0x3169CF8, 0, "For clean screenshots.", false},
-    {"Disable gates", 0x316CA34, 0, "Gates and doors don't block you.", false},
-    {"Disable level-change events", 0x315D0C0, 0, "", false},
-    {"Camera snap off", 0x300B89C, 1, "The camera doesn't snap back behind you.", false},
+    {"Hide clouds", 0x2FFDA48, 1, "", false},          {"Hide water", 0x30356EC, 1, "", false},
+    {"Hide ocean", 0x30356F0, 1, "", false},           {"Hide sun", 0x31E64F6, 0, "", false},
+    {"Hide avatars", 0x31E64F0, 0, "", false},         {"Hide objects", 0x31E64F1, 0, "", false},
+    {"Hide object edges (skirts)", 0x31E64F2, 0, "", false}, {"Hide models", 0x31E64F3, 0, "", false},
+    {"Disable lights", 0x346A80C, 0, "", false},       {"Hide game UI", 0x31E64F8, 0, "For clean screenshots.", false},
+    {"Disable gates", 0x31E9234, 0, "Gates and doors don't block you.", false},
+    {"Disable level-change events", 0x31D98A0, 0, "", false},
+    {"Camera snap off", 0x307A874, 1, "The camera doesn't snap back behind you.", false},
     // 0.30.0, from TheVoid's table (0.35.2 uses checked in the game code):
-    {"Skip cutscenes", 0x34A8B30, 0, "The game's kAutoSkipAllTimelines switch: cutscenes are skipped.", false},
-    {"Motion blur off", 0x2F61D20, 1, "The screen-effects pass that uses u_disableMeshMotion/u_windPattern.", false},
-    {"Radial blur off (experimental)", 0x2F61D21, 1, "The MotionBlur pass's own switch (u_radialBoostBlur).", false},
-    {"Disable multiplayer (experimental)", 0x2FC1318, 1,
+    {"Skip cutscenes", 0x3527D80, 0, "The game's kAutoSkipAllTimelines switch: cutscenes are skipped.", false},
+    {"Motion blur off", 0x30003C0, 1, "The screen-effects pass that uses u_disableMeshMotion/u_windPattern.", false},
+    {"Radial blur off (experimental)", 0x30003C1, 1, "The MotionBlur pass's own switch (u_radialBoostBlur).", false},
+    {"Disable multiplayer (experimental)", 0x302E3D8, 1,
      "TheVoid's social.disable_multiplayer: one of the game's network sends is skipped. Others may stop seeing your "
      "moves; switch it off if the game misbehaves.", false},
 };
 GameSwitch gRadarSw[] = {
-    {"Show spirit locations", 0x3155250, 0, "", false}, {"Shrine radar", 0x34D54D0, 0, "", false},
-    {"Map shrine radar", 0x34D5500, 0, "", false},      {"All NPCs on radar", 0x312F4BA, 0, "", false},
-    {"Friend radar", 0x33AEEB8, 0, "", false},          {"Collected wing lights on radar", 0x3511690, 0, "", false},
-    {"Show all feedback", 0x34D54D4, 0, "", false},     {"Fragment auto-warp", 0x3178CA4, 0, "", false},
-    {"Hide HUD except star fragments", 0x347BE14, 0, "", false},
+    {"Show spirit locations", 0x31D19D0, 0, "", false}, {"Shrine radar", 0x35555D0, 0, "", false},
+    {"Map shrine radar", 0x3555600, 0, "", false},      {"All NPCs on radar", 0x31AB10A, 0, "", false},
+    {"Friend radar", 0x342B5D8, 0, "", false},          {"Collected wing lights on radar", 0x3593080, 0, "", false},
+    {"Show all feedback", 0x35555D4, 0, "", false},     {"Fragment auto-warp", 0x31F56C4, 0, "", false},
+    {"Hide HUD except star fragments", 0x34FAD04, 0, "", false},
 };
 GameSwitch gFunSw[] = {
-    {"Rainbow glow", 0x3450C88, 0, "", false},          {"Fast candle burn", 0x317658C, 0, "", false},
-    {"Tame dark creatures", 0x3175224, 0, "", false},
-    {"Place anywhere", 0x3512CE0, 0,
+    {"Rainbow glow", 0x34CF118, 0, "", false},          {"Fast candle burn", 0x31F2FAC, 0, "", false},
+    {"Tame dark creatures", 0x31F1C14, 0, "", false},
+    {"Place anywhere", 0x35946D0, 0,
      "TheVoid's placeable-anywhere flag: forces the placement code's per-item free-placement setting on.", false},
 };
 GameSwitch gDebugSw[] = {
-    {"Pause UI animations", 0x34A6B24, 0, "", false},   {"Show UI hierarchy", 0x34A6B2C, 0, "", false},
-    {"TV debug UI", 0x309F510, 0, "", false},           {"Dye debug", 0x31850E0, 0, "", false},
-    {"Particle flag (unidentified)", 0x341ADD0, 0,
-     "TheVoid's unnamed particle entry: skips one call in the particle bounds code (0x1BC95F8).", false},
+    {"Pause UI animations", 0x3525D04, 0, "", false},   {"Show UI hierarchy", 0x3525D0C, 0, "", false},
+    {"TV debug UI", 0x310E5B0, 0, "", false},           {"Dye debug", 0x3200F90, 0, "", false},
+    {"Particle flag (unidentified)", 0x3498F80, 0,
+     "TheVoid's unnamed particle entry: skips one call in the particle bounds code (0x1C1C50C).", false},
 };
 
 bool SetByte(const char* what, uint32_t at, uint8_t v) {
@@ -2054,9 +2054,9 @@ void SwitchList(GameSwitch* list, int n) {
 }
 
 struct FloatVar { const char* label; uint32_t at; float lo, hi, def; float v; };
-FloatVar gFloats[] = {{"Flower height", 0x2FA9E28, 0.f, 5.f, 1.f, 1.f},
-                      {"Flower size", 0x2FA9E2C, 0.f, 5.f, 1.f, 1.f},
-                      {"Candle flame size", 0x2F5D04C, 0.f, 20.f, 2.2f, 2.2f}};
+FloatVar gFloats[] = {{"Flower height", 0x3016B10, 0.f, 5.f, 1.f, 1.f},
+                      {"Flower size", 0x3016B14, 0.f, 5.f, 1.f, 1.f},
+                      {"Candle flame size", 0x2FFB7CC, 0.f, 20.f, 2.2f, 2.2f}};
 bool gFakeCape = false;
 float gFakeCapeLevel = 1.f;
 
@@ -2077,12 +2077,12 @@ void SwitchesSection() {
         }
     }
     if (Toggle("Fake cape level", &gFakeCape, "Shows your cape at the level below (the game's own debug switch).")) {
-        if (!SetByte("Fake cape level", 0x34804C0, gFakeCape)) gFakeCape = !gFakeCape;
+        if (!SetByte("Fake cape level", 0x34FF470, gFakeCape)) gFakeCape = !gFakeCape;
     }
     if (Slider("fakecape", &gFakeCapeLevel, 0.f, 20.f, 1.f, "level %.0f")) {
         float cur = 0;
-        if (GameBase() && ReadMemory(GameBase() + 0x2FF53B4, &cur, 4) && std::isfinite(cur))
-            WriteGameMemory(0x2FF53B4, &gFakeCapeLevel, 4);
+        if (GameBase() && ReadMemory(GameBase() + 0x30634DC, &cur, 4) && std::isfinite(cur))
+            WriteGameMemory(0x30634DC, &gFakeCapeLevel, 4);
     }
     Section("DEBUG", nullptr);
     SwitchList(gDebugSw, IM_ARRAYSIZE(gDebugSw));
@@ -2723,32 +2723,32 @@ struct CodePatch { const char* what; uint32_t at; uint32_t original; uint32_t pa
 
 // Scooter mode (as TSM has it): the avatar move code (0x12343FC) loads a byte that, when set, zeroes the ground
 // velocity before the position update; forcing it to 1 (mov w8,#1) gives TSM's "no movement animation" glide.
-const CodePatch kScooterPatch = {"Scooter mode", 0x12343FC, 0x38686808u /* ldrb w8, [x0, x8] */,
+const CodePatch kScooterPatch = {"Scooter mode", 0x1270C70, 0x38686808u /* ldrb w8, [x0, x8] */,
                                  0x52800028u /* mov w8, #1 */};
 // Unlimited zoom (as TSM has it): the whisker camera update stores its clamped zoom distance (str s0,[x19,#0x5b0] at
 // 0x291F078); without that store the camera keeps whatever distance you pinch to.
 // 0.26.0, derived from the 0.35.2 code:
 // Freeze krill: the dark creature update loads its count (ldr w8,[x19,#0x2360] at 0x15A0D5C); 0 skips all of them.
-const CodePatch kFreezeKrillPatch = {"Freeze krill", 0x15A0D5C, 0xB9636268u /* ldr w8, [x19, #0x2360] */,
+const CodePatch kFreezeKrillPatch = {"Freeze krill", 0x15EAB80, 0xB9636268u /* ldr w8, [x19, #0x2360] */,
                                      0x2A1F03E8u /* mov w8, wzr */};
 // Birthday-hat krill: the creature setup draws the hat when w22 bit 0 or a config byte is set (tbnz at 0x159E75C);
 // the tbnz becomes a jump straight to the hat (b #0x159E770).
-const CodePatch kBirthdayKrillPatch = {"Birthday-hat krill", 0x159E75C, 0x370000B6u /* tbnz w22, #0, #0x159e770 */,
-                                       0x14000005u /* b #0x159e770 */};
+const CodePatch kBirthdayKrillPatch = {"Birthday-hat krill", 0x15EC5A4, 0x370000B6u /* tbnz w22, #0, #0x15ec5b8 */,
+                                       0x14000005u /* b #0x15ec5b8 */};
 // Disable wind walls: the wind wall update reads its active byte (ldrb w13,[x0,x10] at 0x170A044) and does nothing
 // when it's 0; the load becomes 0.
-const CodePatch kWindWallPatch = {"Disable wind walls", 0x170A044, 0x386A680Du /* ldrb w13, [x0, x10] */,
+const CodePatch kWindWallPatch = {"Disable wind walls", 0x1742DE0, 0x386A680Du /* ldrb w13, [x0, x10] */,
                                   0x2A1F03EDu /* mov w13, wzr */};
-const CodePatch kFreeZoomPatch = {"Unlimited zoom", 0x291F078, 0xBD05B260u /* str s0, [x19, #0x5b0] */, kNop};
+const CodePatch kFreeZoomPatch = {"Unlimited zoom", 0x29B69D4, 0xBD05B260u /* str s0, [x19, #0x5b0] */, kNop};
 
 // Unlock all: the game's "account has unlock" check (0xDFC144, bool (barn, name)) returns 1 when the name is in its
 // first set (0xEE74F8 lookup), otherwise the result of a second lookup. The branch to the second lookup
 // (0xDFC174, cbz x0) becomes a NOP, so the function always returns 1. One aligned word: always a whole instruction.
-const CodePatch kUnlockPatch = {"Unlock all", 0xDFC174, 0xB40000C0u /* cbz x0, #0xdfc18c */, kNop};
+const CodePatch kUnlockPatch = {"Unlock all", 0xE47738, 0xB40000C0u /* cbz x0, #0xdfc18c */, kNop};
 // 0.22.1: the closet checks ownership itself (0x1BBC3EC: bl 0xEE74F8, the same lookup, called directly, so the patch
 // above never reached it). As TSM does, the call becomes a NOP: x0 keeps its non-null argument, so the item counts
 // as owned in the closet. Restored with the first patch.
-const CodePatch kUnlockClosetPatch = {"Unlock all (closet)", 0x1BBC3EC, 0x97CCAC43u /* bl 0xee74f8 */, kNop};
+const CodePatch kUnlockClosetPatch = {"Unlock all (closet)", 0x1C0EF84, 0x97CC3075u /* bl 0xee74f8 */, kNop};
 // Spirit tree prerequisites. The game asks "can this node be bought?" as: not owned (HasUnlock 0xDFC144 on the
 // node's name, object +0x90) AND its prerequisite owned (HasUnlock on +0xa8). That check is in five places:
 //   0x1543D20 loops over a spirit's nodes and returns 1 if any can be bought (the "something to buy" marker); the
@@ -2765,22 +2765,22 @@ const CodePatch kUnlockClosetPatch = {"Unlock all (closet)", 0x1BBC3EC, 0x97CCAC
 // The ownership checks of the node itself are untouched. Purchases still go to the server, which may refuse an
 // out-of-order node.
 const CodePatch kSpiritTreePrereqPatches[] = {
-    {"Spirit tree prereqs (marker)", 0x1543EE0, 0x3607F7E0u /* tbz w0, #0, #0x1543ddc */, kNop},
-    {"Spirit tree prereqs (node 1)", 0x15384F8, 0x97E30F13u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
-    {"Spirit tree prereqs (node 2)", 0x1EA5BB0, 0x97BD5965u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
-    {"Spirit tree prereqs (node 3)", 0x1EA8A44, 0x97BD4DC0u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
-    {"Spirit tree prereqs (node 4)", 0x25B08F0, 0x97A12E15u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
-    {"Spirit tree prereqs (tree)", 0x1540810, 0x17FFFF89u /* b 0x1540634 */, 0x17FFFF81u /* b 0x1540614 */},
-    {"Spirit tree prereqs (tap)", 0x153CCD0, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
-    {"Spirit tree prereqs (look 1)", 0x153D60C, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
-    {"Spirit tree prereqs (look 2)", 0x153EB60, 0x2A0003F5u /* mov w21, w0 */, 0x2A1F03F5u /* mov w21, wzr */},
-    {"Spirit tree prereqs (look 3)", 0x153D8C8, 0x942C07CFu /* bl 0x203f804 */, 0x2A1F03E0u /* mov w0, wzr */},
+    {"Spirit tree prereqs (marker)", 0x158F4B0, 0x3607F7A0u /* tbz w0, #0, #0x1543ddc */, kNop},
+    {"Spirit tree prereqs (node 1)", 0x15839FC, 0x97E30F43u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (node 2)", 0x1F06DE8, 0x97BD0248u /* bl 0xe47708 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (node 3)", 0x1F0BAF8, 0x97BCEF04u /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (node 4)", 0x260F0E0, 0x97A0E18Au /* bl 0xdfc144 */, 0x52800020u /* mov w0, #1 */},
+    {"Spirit tree prereqs (tree)", 0x158B234, 0x17FFFF89u /* b 0x1540634 */, 0x17FFFF81u /* b 0x1540614 */},
+    {"Spirit tree prereqs (tap)", 0x1587E78, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
+    {"Spirit tree prereqs (look 1)", 0x15889B4, 0x2A0003F6u /* mov w22, w0 */, 0x2A1F03F6u /* mov w22, wzr */},
+    {"Spirit tree prereqs (look 2)", 0x1589CF8, 0x2A0003F5u /* mov w21, w0 */, 0x2A1F03F5u /* mov w21, wzr */},
+    {"Spirit tree prereqs (look 3)", 0x1588C70, 0x942C6D6Du /* bl 0x203f804 */, 0x2A1F03E0u /* mov w0, wzr */},
     // 0.37.6 diagnostic (seasonal spirit, grayed node): the tree calls 0x15405C8 with a tier (w2 = 1, 3864 calls),
     // so the parent check is skipped and node tier (+0xb4) > your tier locks it instead. Seasonal trees are tiered
     // (trust, "trust_error_tier_locked"); your tier is 0x24A5248 on the relationship object, kept at menu +0x83c.
-    {"Spirit tree tiers (available)", 0x1540824, 0x54FFF068u /* b.hi 0x1540630 */, kNop},
-    {"Spirit tree tiers (locked msg)", 0x24EB8E0, 0x540002A2u /* b.hs 0x24eb934 */, 0x14000015u /* b 0x24eb934 */},
-    {"Spirit tree tiers (node check)", 0x24E77FC, 0x540000E9u /* b.ls 0x24e7818 */, 0x14000007u /* b 0x24e7818 */},
+    {"Spirit tree tiers (available)", 0x158B248, 0x54FFF068u /* b.hi 0x1540630 */, kNop},
+    {"Spirit tree tiers (locked msg)", 0x255A310, 0x540002A2u /* b.hs 0x24eb934 */, 0x14000015u /* b 0x24eb934 */},
+    {"Spirit tree tiers (node check)", 0x2562E84, 0x540000E9u /* b.ls 0x24e7818 */, 0x14000007u /* b 0x24e7818 */},
 };
 // Plus the game's own byte 0x34B4600 (the "All friendship nodes" switch): with it set, the menu doesn't gray nodes
 // above your tier (0x24E9098 sets display flag 0x20 only while it's 0) and treats them as unlocked (0x24F0898).
@@ -2789,14 +2789,14 @@ const CodePatch kSpiritTreePrereqPatches[] = {
 // shown (table/friend checks). The two places that can make it 0 (mov w22, wzr / orr w22, w0, w8) give 1 instead;
 // every other path already gives 1.
 const CodePatch kReadPatches[2] = {
-    {"Read all messages", 0x1478CB0, 0x2A1F03F6u /* mov w22, wzr */, 0x52800036u /* mov w22, #1 */},
-    {"Read all messages", 0x1478CE4, 0x2A080016u /* orr w22, w0, w8 */, 0x52800036u /* mov w22, #1 */},
+    {"Read all messages", 0x14CE990, 0x2A1F03F6u /* mov w22, wzr */, 0x52800036u /* mov w22, #1 */},
+    {"Read all messages", 0x14CE9C4, 0x2A080016u /* orr w22, w0, w8 */, 0x52800036u /* mov w22, #1 */},
 };
 
 bool SetCodePatch(const CodePatch& p, bool on) {
     uint32_t cur = 0;
     if (!GameBase() || !ReadMemory(GameBase() + p.at, &cur, 4) || (cur != p.original && cur != p.patched)) {
-        Log("%s: the game code at 0x%X isn't what 0.35.2 has (0x%08X); not changed", p.what, p.at, cur);
+        Log("%s: the game code at 0x%X isn't what 0.35.5 has (0x%08X); not changed", p.what, p.at, cur);
         return false;
     }
     uint32_t v = on ? p.patched : p.original;
@@ -2817,9 +2817,9 @@ bool SetFreeZoom(bool on) {
 // The game's debug switches (bytes, 0 normally; TSM's labels): kInvincibility (energy and breath only go up, breath
 // kept full: 0x11EEF8C, 0x11EF000, 0x11EAE84), kAutoCharge (always charging as if at a light: 0x11EBC78),
 // kDisableRainDrain (no drain in rain: 0x11EB2FC).
-constexpr uint32_t kInvincibleSwitch = 0x3131638;
-constexpr uint32_t kAutoChargeSwitch = 0x3131634;
-constexpr uint32_t kRainDrainSwitch = 0x3131648;
+constexpr uint32_t kInvincibleSwitch = 0x31AD288;
+constexpr uint32_t kAutoChargeSwitch = 0x31AD284;
+constexpr uint32_t kRainDrainSwitch = 0x31AD298;
 
 struct Extra {
     float charge = 1.f;
@@ -3221,39 +3221,39 @@ void ItemsSection() {
 // game's light call, bit 15 = skipped by the game; byte +0x10A78 = the light was already sent (0x11A853C).
 constexpr uintptr_t kGameAvatarBarnOff = 0x318;  // Game +0x318: AvatarBarn (as in teleport.cpp)
 constexpr uintptr_t kBarnAvatars = 0x30;
-constexpr uintptr_t kAvatarStride = 0x10CF0;
+constexpr uintptr_t kAvatarStride = 0x10CB0;
 constexpr int kAvatarSlots = 0x3B;
-constexpr uintptr_t kAvLocal = 0xB870;
-constexpr uintptr_t kAvState = 0x10A0C;
-constexpr uintptr_t kAvGone1 = 0x10A10, kAvGone2 = 0x10A12;  // IsActive: both 0
-constexpr uintptr_t kAvLightSent = 0x10A78;
-constexpr uint32_t kCharcoalSwitch = 0x312F4B4;  // the game's "unlit players" switch (read at 0x11A048C)
+constexpr uintptr_t kAvLocal = 0xB8B0;
+constexpr uintptr_t kAvState = 0x10A4C;
+constexpr uintptr_t kAvGone1 = 0x10A50, kAvGone2 = 0x10A52;  // IsActive: both 0
+constexpr uintptr_t kAvLightSent = 0x10AB8;
+constexpr uint32_t kCharcoalSwitch = 0x31AB104;  // the game's "unlit players" switch (read at 0x11A048C)
 constexpr uintptr_t kGameEventBarn = 0x6B0;       // what the game passes to its light call (0x18703B8, 0x11FC458)
 // The game's own "light this player" (0x11A84D4, avatar, event barn): clears bit 0, sets bit 14 and, the first time
 // (+0x10A78), starts the game's networked light event for that player. Called by the candle when two flames touch
 // (0x18703BC, after its distance checks) and by OrbitHandholdingScene for every unlit avatar in the level (0x11FC460).
-constexpr uint32_t kLightAvatarFn = 0x11A84D4;
+constexpr uint32_t kLightAvatarFn = 0x11E4B10;
 constexpr uint32_t kLightAvatarFirst[4] = {0xD10103FF, 0xA9017BFD, 0xF90013F5, 0xA9034FF4};
 
 // Show others: the ghost fade (0x120F73C, per avatar) clamps its amount with fmov s2, #1.0 at 0x120FA00; with
 // movi d2, #0 the amount is always 0, so hidden, blocked-looking and unlit players are drawn normally.
-const CodePatch kRevealPatch = {"Show others", 0x120FA00, 0x1E2E1002u /* fmov s2, #1.0 */, 0x2F00E402u /* movi d2, #0 */};
+const CodePatch kRevealPatch = {"Show others", 0x12501AC, 0x1E2E1002u /* fmov s2, #1.0 */, 0x2F00E402u /* movi d2, #0 */};
 // Force light (your screen): the unlit check reads the game's switch (ldrb w12, [x11, #0x4b4] at 0x11A048C); reading
 // 0 instead (mov w12, wzr) means nobody is marked unlit on your device.
-const CodePatch kNoCharcoalPatch = {"Force light", 0x11A048C, 0x3952D16Cu, 0x2A1F03ECu /* mov w12, wzr */};
+const CodePatch kNoCharcoalPatch = {"Force light", 0x11DE6B8, 0x3944116Cu, 0x2A1F03ECu /* mov w12, wzr */};
 // Unlight (your screen): the switch check (cbz w12 at 0x11A0498) becomes a NOP and "not lit before"
 // (eor w8, w10, #1 at 0x11A04AC) becomes 1, so every other player in the level is marked unlit; your own avatar and
 // the ones the game skips (local byte, bit 15) are still left out by the csel at 0x11A04B4.
 const CodePatch kUnlightPatches[2] = {
-    {"Unlight all", 0x11A0498, 0x3400010Cu /* cbz w12, #0x11a04b8 */, kNop},
-    {"Unlight all", 0x11A04AC, 0x52000148u /* eor w8, w10, #1 */, 0x52800028u /* mov w8, #1 */},
+    {"Unlight all", 0x11DE6C4, 0x340000ECu /* cbz w12, #0x11de6e0 */, kNop},
+    {"Unlight all", 0x11DE6D4, 0x52000148u /* eor w8, w10, #1 */, 0x52800028u /* mov w8, #1 */},
 };
 // Friendship tree: the friendship level of a player (0x24A92F8, reached through Game +0x830 -> +0x10; 0x24A4FE8 is
 // its wrapper) ends with cbz x0 / ldr w0, [x0, #4] (0x24A938C / 0x24A9390: the friend's level, 0 for strangers). The
 // menu locks an ability when its level (+0x2FC) is above it ("trust_error_tier_locked", 0x1D775A0). Patched: the
 // ldr becomes mov w0, #levels (the number of levels in the game's tier list) and the cbz a NOP. Never more than the
 // list holds: 0x24AF7FC / 0x24AE580 abort the game for a level past the end.
-constexpr uint32_t kTierAt[2] = {0x24A938C, 0x24A9390};
+constexpr uint32_t kTierAt[2] = {0x2514BD0, 0x2514BD4};
 constexpr uint32_t kTierOriginal[2] = {0xB4000040u /* cbz x0, #0x24a9394 */, 0xB9400400u /* ldr w0, [x0, #4] */};
 constexpr uintptr_t kGameRelationship = 0x830;
 
@@ -3303,7 +3303,7 @@ bool SetTree(int levels) {
     bool w0ok = cur[0] == kTierOriginal[0] || cur[0] == kNop;
     bool w1ok = cur[1] == kTierOriginal[1] || (cur[1] & 0xFFE0001F) == 0x52800000u;
     if (!w0ok || !w1ok) {
-        Log("Friendship tree: the game code at 0x%X isn't what 0.35.2 has; not changed", kTierAt[0]);
+        Log("Friendship tree: the game code at 0x%X isn't what 0.35.5 has; not changed", kTierAt[0]);
         return false;
     }
     if (levels > 0) {
@@ -3380,9 +3380,9 @@ void SetUnlight(bool on) {
 // 0x11859BC, the friend record; strangers have none); its tbz at 0x1D94810 becomes a NOP so that row isn't locked.
 // The offer itself (the button's press, 0x1D78E14) needs no friend record: it calls the game's own offer
 // (0x118DE84: your avatar, the ability, the target's avatar id at button +0x2DC), which is what other players see.
-constexpr uint32_t kAllAbilitiesSwitch = 0x3455E25;  // byte, 0 normally; TSM's kEnableAllRelationshipAbilities
+constexpr uint32_t kAllAbilitiesSwitch = 0x34D41A5;  // byte, 0 normally; TSM's kEnableAllRelationshipAbilities
 const CodePatch kStrangerPatches[1] = {
-    {"Offer emotes to strangers", 0x1D97D6C, 0x97E8271Du /* bl 0x17a19e0 */, 0x52800020u /* mov w0, #1 */},
+    {"Offer emotes to strangers", 0x1DEEEB0, 0x97E7DE3Du /* bl 0x17a19e0 */, 0x52800020u /* mov w0, #1 */},
 };
 // (0.16.4: the second patch, 0x1D94810 "base ability bought with this friend", made every upgraded ability show
 // next to its base: emotes appeared twice. Dropped; TSM doesn't patch it either.)
@@ -3431,7 +3431,7 @@ void SocialSection() {
                    {{"message", Quote(X.speak), ""}, {"localizeMessage", "false", ""}});
     if (Toggle("Read all messages", &X.readAll,
                "Shows the text of chat from people you haven't befriended (and tables you're not at) instead of "
-               "\"...\": the chat bubble's \"may show text\" check (0x1478CB0, 0x1478CE4) always says yes. Your screen "
+               "\"...\": the chat bubble's \"may show text\" check (0x14CE990, 0x14CE9C4) always says yes. Your screen "
                "only. Off: the game's code put back.")) {
         if (!SetPatchPair(kReadPatches, X.readAll)) X.readAll = !X.readAll;
         else Log("Read all messages %s", X.readAll ? "on" : "off");
@@ -3464,7 +3464,7 @@ void SocialSection() {
             "Unlight all switches both off (they'd undo it).");
     if (Toggle("Show others client side", &SO.reveal,
                "Hidden, faded and unlit-looking players are drawn normally, for you only: the game's ghost fade "
-               "(0x120FA00) always stays at 0. Off: the game's code put back.")) {
+               "(0x12501AC) always stays at 0. Off: the game's code put back.")) {
         if (SO.reveal && SO.unlight) SO.unlight = false, SetUnlight(false);
         SetReveal(SO.reveal);
     }
@@ -3480,7 +3480,7 @@ void SocialSection() {
     ImGui::Checkbox("Also light them for real (others see it)", &SO.lightReal);
     ImGui::EndDisabled();
     Dim("Needs Force light all and the server switch (Transform > Winged light). Calls the game's own light-a-player "
-        "function (0x11A84D4, the one your candle calls when flames touch and that a game scene calls for everyone "
+        "function (0x11E4B10, the one your candle calls when flames touch and that a game scene calls for everyone "
         "in the level) for each player the game would show unlit, one every 0.5 s; the game sends each light once. "
         "Switching off stops it; a light already given stays (as in the game).%s",
         M.server ? "" : " The server switch is off.");
@@ -3501,23 +3501,23 @@ void SocialSection() {
     if (Toggle("Offer emotes to strangers", &SO.strangers,
                "Tap a player you haven't befriended and the game's player menu shows the friendship abilities (hold "
                "hands, high five, hug, carry...) as it does for a friend: the menu's \"is a friend\" check "
-               "(0x1D97D6C) says yes. Use it "
+               "(0x1DEEEB0) says yes. Use it "
                "with Unlock friendship tree below, or the abilities stay locked at friendship level 0. Off: the "
                "game's code put back (reopen the menu).")) {
         if (!SetCodePatch(kStrangerPatches[0], SO.strangers)) SO.strangers = !SO.strangers;
         else Log("Offer emotes to strangers %s", SO.strangers ? "on" : "off");
     }
     if (SO.strangers && !SO.tree) ImGui::TextColored(kAmber300, "Switch on Unlock friendship tree too.");
-    Dim("The offer is the game's own: picking an ability calls the game's offer for the player you tapped (0x118DE84, "
+    Dim("The offer is the game's own: picking an ability calls the game's offer for the player you tapped (0x11CC838, "
         "your avatar + the ability + their avatar id), no friend record needed, nothing made up by the mod. Whether "
         "they can accept is up to their game and the server: the other player's game may not show or accept an "
-        "offer from someone who isn't their friend (it refuses a hand-hold lead from a non-friend, 0x11AF9D8). The "
+        "offer from someone who isn't their friend (it refuses a hand-hold lead from a non-friend, 0x11E7738). The "
         "player must be lit (the menu only opens for players you've lit).");
 
     Section("FRIENDSHIP TREE", nullptr);
     if (Toggle("Unlock friendship tree (client side)", &SO.tree,
                "Every player counts as fully befriended on your device, so the player menu shows every ability "
-               "unlocked: the game's friendship level (0x24A92F8) reports the top level of its own tier list. Your "
+               "unlocked: the game's friendship level (0x2514B3C) reports the top level of its own tier list. Your "
                "screen only: the other player's game and the server still decide. Off: the game's code put back.")) {
         if (SO.tree) {
             int n = TreeLevels();
@@ -3541,32 +3541,32 @@ void SocialSection() {
         }
     }
     if (SO.tree) Dim("Reporting level %d.", SO.treeLevels);
-    Dim("Also sets the game's \"enable all relationship abilities\" switch (0x3455E25, as TSM does), so abilities "
+    Dim("Also sets the game's \"enable all relationship abilities\" switch (0x34D41A5, as TSM does), so abilities "
         "aren't asked for with candles first.");
     // 0.30.0: TheVoid sets this one together with 0x3455E25. The friendship tree code (0x24F0898) treats a node past
     // the unlocked count as locked only while it's 0.
     static bool allNodes = false;
     static bool spiritFree = false;  // the spirit tree switch below (shares 0x34B4600)
     if (Toggle("Show every friendship node unlocked (experimental)", &allNodes,
-               "TheVoid's second friendship switch (0x34B4600): the tree treats nodes past your level as unlocked on "
+               "TheVoid's second friendship switch (0x3533D40): the tree treats nodes past your level as unlocked on "
                "your screen. The server still decides what you can use."))
-        if ((allNodes || !spiritFree) && !SetSwitch("All friendship nodes", 0x34B4600, allNodes)) allNodes = !allNodes;
+        if ((allNodes || !spiritFree) && !SetSwitch("All friendship nodes", 0x3533D40, allNodes)) allNodes = !allNodes;
 
     Section("SPIRIT TREES", nullptr);
     if (Toggle("Skip spirit tree prerequisites (experimental)", &spiritFree,
                "Spirit trees make you buy lower nodes before higher ones. This switch changes the game's own "
                "\"can this node be bought\", \"is the node before it owned\" and tier checks (13 places, plus the "
-               "game's tier byte 0x34B4600, shared with the friendship switch above) so a node only has to be "
+               "game's tier byte 0x3533D40, shared with the friendship switch above) so a node only has to be "
                "unowned, so you can select it. The server refuses buying a node out of order or above your tier "
                "(the game then shows \"game data corrupted\"; restart the game to clear it). Close and reopen the "
                "spirit's tree after switching. Off: the game's code put back.")) {
         bool ok = true;
         for (const CodePatch& p : kSpiritTreePrereqPatches) ok = SetCodePatch(p, spiritFree) && ok;
         // The tier byte is shared with the friendship switch above: only cleared when that one is off too.
-        if (ok && (spiritFree || !allNodes)) ok = SetSwitch("Spirit tree tiers", 0x34B4600, spiritFree);
+        if (ok && (spiritFree || !allNodes)) ok = SetSwitch("Spirit tree tiers", 0x3533D40, spiritFree);
         if (!ok) {
             for (const CodePatch& p : kSpiritTreePrereqPatches) SetCodePatch(p, false);
-            if (!allNodes) SetSwitch("Spirit tree tiers", 0x34B4600, false);
+            if (!allNodes) SetSwitch("Spirit tree tiers", 0x3533D40, false);
             spiritFree = false;
         } else {
             Log("Spirit tree prerequisites %s", spiritFree ? "skipped" : "back to normal");
@@ -3577,17 +3577,17 @@ void SocialSection() {
     // targets or vtable entries) and log how often each ran.
     struct TreeCheck { uint32_t at; const char* what; };
     static const TreeCheck kTreeChecks[] = {
-        {0x15405C8, "tree: node available"},          {0x153CB90, "tree: tap handler"},
-        {0x153D25C, "tree: node look 1"},             {0x153EAC8, "tree: node look 2"},
-        {0x203F804, "node not owned"},                {0x203D4E8, "node quest/ap06 lock"},
-        {0x24EB894, "trust tier lock"},               {0x1543D20, "spirit has something to buy"},
-        {0x1538408, "can buy (node 1)"},              {0x1EA5790, "can buy (node 2)"},
-        {0x1EA898C, "can buy (node 3)"},              {0x25B07D0, "can buy (node 4)"},
-        {0x25010B4, "SpiritShopMenu"},
+        {0x158AFEC, "tree: node available"},          {0x1587D38, "tree: tap handler"},
+        {0x1588604, "tree: node look 1"},             {0x1589C60, "tree: node look 2"},
+        {0x20A4224, "node not owned"},                {0x20A3E90, "node quest/ap06 lock"},
+        {0x255A29C, "trust tier lock"},               {0x158F2E8, "spirit has something to buy"},
+        {0x158390C, "can buy (node 1)"},              {0x1F069C0, "can buy (node 2)"},
+        {0x1F0BA40, "can buy (node 3)"},              {0x260EFC0, "can buy (node 4)"},
+        {0x256F448, "SpiritShopMenu"},
         // 0.37.6: more menus (seasonal spirit tree, grayed node): functions using "spirit_shop_item_viewed" /
         // "spiritshop_menu_opened", the season pass purchase button texts, and ConstellationShopButton.
-        {0xFABCD8, "spirit shop viewed 1"},           {0xFB0464, "spirit shop viewed 2"},
-        {0x1669860, "season pass button"},            {0x15414E0, "ConstellationShopButton"},
+        {0xFE2C3C, "spirit shop viewed 1"},           {0xFE73C8, "spirit shop viewed 2"},
+        {0x16A0E14, "season pass button"},            {0x12FB7A4, "ConstellationShopButton"},
     };
     ImGui::TextWrapped("Still locked? Tap Start, open the spirit's tree, tap a locked node, come back here and tap "
                        "Log (Stop logs too), then send the log. It shows which game checks ran.");
@@ -3625,7 +3625,7 @@ void SocialSection() {
                "Off: the game's normal audience settings back.")) ApplyAudience();
     if (Toggle("Unlock all (local only)", &X.unlockAll,
                "Everything the game checks with its \"has unlock\" (emotes, outfits, quests, spells...) counts as "
-               "unlocked on your device (0xDFC144 always returns yes). Local only: the server still decides anything "
+               "unlocked on your device (0xE47708 always returns yes). Local only: the server still decides anything "
                "it checks (wearing, buying, saving). Off: the game's code put back; you may need a level change to "
                "see your real unlocks again.")) {
         if (!SetCodePatch(kUnlockPatch, X.unlockAll)) X.unlockAll = !X.unlockAll;
@@ -3689,11 +3689,11 @@ void SocialTick(double t) {
 //   the first 0.25 s; patched: NOP, so it goes home after the first 0.25 s.
 // - Fade all avatars: byte 0x312F490 (read at 0x11A8E08): when set, every avatar's fade target is 0 (ethereal),
 //   on your screen.
-const CodePatch kFastFlapPatch = {"Fast flap", 0x22D49F0, 0x1F010800u /* fmadd s0, s0, s1, s2 */,
+const CodePatch kFastFlapPatch = {"Fast flap", 0x233AAD0, 0x1F010800u /* fmadd s0, s0, s1, s2 */,
                                   0x1E2C1000u /* fmov s0, #0.5 */};
-const CodePatch kAntiAfkPatch = {"Anti-AFK", 0xF8F374, 0x1A9FD7E0u /* cset w0, gt */, 0x2A1F03E0u /* mov w0, wzr */};
-const CodePatch kFastHomePatch = {"Fast home", 0x1EBE348, 0x54000CCBu /* b.lt #0x1ebe4e0 */, kNop};
-constexpr uint32_t kFadeAllSwitch = 0x312F490;
+const CodePatch kAntiAfkPatch = {"Anti-AFK", 0xFC60C4, 0x1A9FD7E0u /* cset w0, gt */, 0x2A1F03E0u /* mov w0, wzr */};
+const CodePatch kFastHomePatch = {"Fast home", 0x1F20554, 0x54000D0Bu /* b.lt #0x1ebe4e0 */, kNop};
+constexpr uint32_t kFadeAllSwitch = 0x31AB0E0;
 
 struct PlayerMore {
     float dash = 15.f;
@@ -3771,7 +3771,7 @@ void Stance(const char* label, const char* state, int index, bool sit, bool slee
 // 0.30.0 from TheVoid's table. Dark-stone value: a loop over players (0x15BB0B8) copies each player's float at +0x248
 // into the list the dark-stone code uses (DarkStoneNoBake); TheVoid replaces the three loads with one of its values
 // (fmov s0 #5 / #20 / #-10, its patch strings).
-const uint32_t kDarkStoneAt[3] = {0x15BB0C0, 0x15BB134, 0x15BB1AC};
+const uint32_t kDarkStoneAt[3] = {0x1607FF8, 0x160806C, 0x16080E4};
 const uint32_t kDarkStoneOrig[3] = {0xBD424920u /* ldr s0, [x9, #0x248] */, 0xBD424940u /* ldr s0, [x10, #0x248] */,
                                     0xBD424940u};
 const uint32_t kDarkStoneVal[4] = {0, 0x1E229000u /* fmov s0, #5.0 */, 0x1E269000u /* fmov s0, #20.0 */,
@@ -3785,7 +3785,7 @@ bool SetDarkStone(int choice) {
             for (int k = 1; k < 4; k++) known |= cur[i] == kDarkStoneVal[k];
         }
         if (!known) {
-            Log("Dark-stone value: the game code at 0x%X isn't what 0.35.2 has; not changed", kDarkStoneAt[i]);
+            Log("Dark-stone value: the game code at 0x%X isn't what 0.35.5 has; not changed", kDarkStoneAt[i]);
             return false;
         }
     }
@@ -3803,9 +3803,9 @@ bool SetDarkStone(int choice) {
 // the "skip if zero" test of eight of them (each its own entry); with the test gone (a NOP) the counter wraps to 255
 // and keeps counting, so whatever it times stays on. Which effect each one times isn't known yet.
 struct FlairTimer { uint32_t at; const char* field; };
-const FlairTimer kFlair[8] = {{0x121D360, "+0x3C0"}, {0x121D3A0, "+0x3C6"}, {0x121D3E8, "+0x3C8"},
-                              {0x121D3F8, "+0x3C7"}, {0x121D408, "+0x3C4"}, {0x121D418, "+0x3C5"},
-                              {0x121D428, "+0x550"}, {0x121D438, "+0x551"}};
+const FlairTimer kFlair[8] = {{0x125C468, "+0x3C0"}, {0x125C4A8, "+0x3C6"}, {0x125C4F0, "+0x3C8"},
+                              {0x125C500, "+0x3C7"}, {0x125C510, "+0x3C4"}, {0x125C520, "+0x3C5"},
+                              {0x125C530, "+0x550"}, {0x125C540, "+0x551"}};
 constexpr uint32_t kFlairCbz = 0x34000069;  // cbz w9, +0xC (the same word at all eight)
 
 void PatchToggle(const char* label, bool* on, const CodePatch& p, const char* help) {
@@ -3867,7 +3867,7 @@ void PlayerMoreMovement() {
                         {"setVelocityY", dash[i].y != 0 ? "true" : "false", ""}, {"fireOnce", "true", ""}});
     }
     Dim("One push (SetAvatarVelocity, fireOnce). World axes, not your facing: the game's event writes its Z value "
-        "into the up slot (0x123B538), so a push along Z or \"forward\" can't be made; X is east/west of the level.");
+        "into the up slot (0x127C4F8), so a push along Z or \"forward\" can't be made; X is east/west of the level.");
 
     ImGui::TextUnformatted("Glide & lift");
     Dim("SetFlightParams while on: glide angle in degrees (the game's cruise pitch; SetCruisePitch's default is 2) and "
@@ -3898,11 +3898,11 @@ void PlayerMoreMovement() {
     EventToggle("No bounce", &PM.noBounce, "nobounce", "DisableLocalPlayerBounce",
                 "No bouncing off bounce pads and springy things (DisableLocalPlayerBounce while on).");
     PatchToggle("Fast flap", &PM.fastFlap, kFastFlapPatch,
-                "Flap again sooner: the time a flap keeps you busy (normally 1-2 s, 0x22D49F0) is 0.5 s, the "
+                "Flap again sooner: the time a flap keeps you busy (normally 1-2 s, 0x233AAD0) is 0.5 s, the "
                 "game's own shortest. Each flap still costs energy. Off: the game's code put back.");
     static bool scooter = false;
     PatchToggle("Scooter mode", &scooter, kScooterPatch,
-                "Glide along without the walking animation, as in TSM (0x12343FC forced to 1). Experimental. Off: the "
+                "Glide along without the walking animation, as in TSM (0x1270C70 forced to 1). Experimental. Off: the "
                 "game's code put back.");
     if (Toggle("Freeze in place", &PM.freeze,
                "Holds you where you are now: the game's AvatarSetPos moves you back to that spot (momentum killed) "
@@ -3963,16 +3963,16 @@ void PlayerPoseLook() {
     if (ImGui::Checkbox("Without its light", &PM.ghostNoLight) && PM.ghost) Ghost();
     ImGui::Unindent(ImGui::GetFrameHeight() + 8);
     if (Toggle("Fade all avatars", &PM.fadeAll,
-               "Every avatar fades out to the ethereal look, on your screen: the game's switch at 0x312F490 (read at "
-               "0x11A8E08). Off: the switch back to 0. (TSM's \"force ethereal\", 0x312F4A0, is the avatar drawing "
-               "budget instead, 0x11A2C50: not used.)")) {
+               "Every avatar fades out to the ethereal look, on your screen: the game's switch at 0x31AB0E0 (read at "
+               "0x11EFC24). Off: the switch back to 0. (TSM's \"force ethereal\", 0x31AB0F0, is the avatar drawing "
+               "budget instead, 0x11E1044: not used.)")) {
         if (!SetSwitch("Fade all avatars", kFadeAllSwitch, PM.fadeAll)) PM.fadeAll = !PM.fadeAll;
     }
     ImGui::BeginDisabled();
     bool no = false;
     ImGui::Checkbox("Charcoal look", &no);
     ImGui::EndDisabled();
-    Dim("Not added: 0x312F4B4 (TSM's \"avatar charcoaling\") is the game's \"players can be unlit\" switch (read at "
+    Dim("Not added: 0x31AB104 (TSM's \"avatar charcoaling\") is the game's \"players can be unlit\" switch (read at "
         "0x11A048C, normally 1); it doesn't make you look charcoal. Force light / Unlight all (Social) use that code.");
     if (Toggle("Tattered cape", &PM.tattered, "Your cape looks torn (SetAvatarCapeTattered, amount 1, while on). Off: "
                "amount 0 for a moment, then switched off.")) {
@@ -3993,11 +3993,11 @@ void PlayerPoseLook() {
 void PlayerConvenience() {
     Section("CONVENIENCE", nullptr);
     PatchToggle("Anti-AFK", &PM.antiAfk, kAntiAfkPatch,
-                "Your game never decides you're idle: the AFK check (0xF8F330) always says no, so no AFK pose, no "
+                "Your game never decides you're idle: the AFK check (0xFC6080) always says no, so no AFK pose, no "
                 "\"full AFK\". Your device only: the server may still drop an idle connection. Off: the game's code "
-                "put back. (TheVoid's no_afk byte, 0x2DFECA0, isn't read by any code in 0.35.2: not used.)");
+                "put back. (TheVoid's no_afk byte, 0x2E9C440, isn't read by any code in 0.35.2: not used.)");
     PatchToggle("Fast home", &PM.fastHome, kFastHomePatch,
-                "Holding the home button sends you home after 0.25 s instead of 5.25 s (0x1EBE348). Off: the game's "
+                "Holding the home button sends you home after 0.25 s instead of 5.25 s (0x1F20554). Off: the game's "
                 "code put back.");
 }
 
@@ -4035,24 +4035,24 @@ bool gDangerOk = false;
 
 // TheVoid's complete_game: it checks the call at 0xEE6A04 is "bl 0xEED26C" (its patch string 1A1A0094) and writes a
 // NOP (1F2003D5); the getter at 0xEE69F8 then returns its own object instead of the lookup result.
-const CodePatch kCompleteGamePatch = {"Complete game", 0xEE6A04, 0x94001A1Au /* bl 0xEED26C */, kNop};
+const CodePatch kCompleteGamePatch = {"Complete game", 0xF1D6CC, 0x940024A0u /* bl 0xEED26C */, kNop};
 // Auto collect wax (TheVoid's command.auto_collect_wax site): the wax pickup timer at 0x28F46E4 only advances while a
 // pickup's flag (+0x108) is set; the test (tbz) NOPed, it always advances. TheVoid's exact patch value isn't known;
 // NOP is its only patch string that fits.
-const CodePatch kAutoWaxPatch = {"Auto collect wax", 0x28F46E8, 0x360001E8u /* tbz w8, #0, #0x28F4724 */, kNop};
-// TheVoid's unnamed 9af520 pair (raindrop phase store 0x1D324DC, "Night_GO_Field" found-flag store 0x1D348F0): NOPs.
-const CodePatch kRainNightPatch[2] = {{"Rain/night stores", 0x1D324DC, 0xBD004261u /* str s1, [x19, #0x40] */, kNop},
-                                      {"Rain/night stores", 0x1D348F0, 0x3900E268u /* strb w8, [x19, #0x38] */, kNop}};
+const CodePatch kAutoWaxPatch = {"Auto collect wax", 0x2980AB4, 0x360001E8u /* tbz w8, #0, #0x28F4724 */, kNop};
+// TheVoid's unnamed 9af520 pair (raindrop phase store 0x1D324DC, "Night_GO_Field" found-flag store 0x1D8AA7C): NOPs.
+const CodePatch kRainNightPatch[2] = {{"Rain/night stores", 0x1D88644, 0xBD004261u /* str s1, [x19, #0x40] */, kNop},
+                                      {"Rain/night stores", 0x1D8AA7C, 0x3900E268u /* strb w8, [x19, #0x38] */, kNop}};
 // TheVoid's unnamed 3afb04 (engine flame/idle sound code, 0xFBDF5C): the load of a value it stores on; TheVoid's float
 // patch strings fit (fmov s0, wzr / fmov s0, #1.0).
-const uint32_t kEngineAt = 0xFBDF5C, kEngineOrig = 0xBD412F80u /* ldr s0, [x28, #0x12c] */;
+const uint32_t kEngineAt = 0xFF4EC4, kEngineOrig = 0xBD412F80u /* ldr s0, [x28, #0x12c] */;
 const uint32_t kEngineVal[3] = {0, 0x1E2703E0u /* fmov s0, wzr */, 0x1E2E1000u /* fmov s0, #1.0 */};
 
 bool SetEngine(int choice) {
     uint32_t cur = 0;
     if (!GameBase() || !ReadMemory(GameBase() + kEngineAt, &cur, 4) ||
         (cur != kEngineOrig && cur != kEngineVal[1] && cur != kEngineVal[2])) {
-        Log("Engine value: the game code at 0x%X isn't what 0.35.2 has; not changed", kEngineAt);
+        Log("Engine value: the game code at 0x%X isn't what 0.35.5 has; not changed", kEngineAt);
         return false;
     }
     uint32_t v = choice ? kEngineVal[choice] : kEngineOrig;
@@ -4082,17 +4082,17 @@ void DangerZoneTab() {
     Section("THEVOID: PROGRESS & REWARDS", "TheVoid's entries for game progress and collecting.");
     static bool complete = false, autoWax = false, autoFrag = false, shardA = false, shardB = false;
     PatchToggle("Complete game (TheVoid's patch)", &complete, kCompleteGamePatch,
-                "TheVoid's command.complete_game: the call at 0xEE6A04 is skipped, exactly as TheVoid does. What the "
+                "TheVoid's command.complete_game: the call at 0xF1D6CC is skipped, exactly as TheVoid does. What the "
                 "game then treats as complete may be saved by the server.");
     PatchToggle("Auto collect wax", &autoWax, kAutoWaxPatch,
                 "Wax pickups' collect timer always runs (TheVoid's auto_collect_wax site). Collected wax is real.");
-    if (Toggle("Auto collect fragments", &autoFrag, "TheVoid's auto_collect_fragments switch (0x347BE10)."))
-        if (!SetSwitch("Auto collect fragments", 0x347BE10, autoFrag)) autoFrag = !autoFrag;
-    if (Toggle("Shard eruption flag A (0x34842A0)", &shardA, "Shard eruption debug flag."))
-        if (!SetSwitch("Shard flag A", 0x34842A0, shardA)) shardA = !shardA;
-    if (Toggle("Shard eruption flag B (0x34842A4)", &shardB,
-               "With B on and A off, the eruption timer the game builds is 30 s instead of 600 s (0x22F8A88)."))
-        if (!SetSwitch("Shard flag B", 0x34842A4, shardB)) shardB = !shardB;
+    if (Toggle("Auto collect fragments", &autoFrag, "TheVoid's auto_collect_fragments switch (0x34FAD00)."))
+        if (!SetSwitch("Auto collect fragments", 0x34FAD00, autoFrag)) autoFrag = !autoFrag;
+    if (Toggle("Shard eruption flag A (0x3503250)", &shardA, "Shard eruption debug flag."))
+        if (!SetSwitch("Shard flag A", 0x3503250, shardA)) shardA = !shardA;
+    if (Toggle("Shard eruption flag B (0x3503254)", &shardB,
+               "With B on and A off, the eruption timer the game builds is 30 s instead of 600 s (0x235BD18)."))
+        if (!SetSwitch("Shard flag B", 0x3503254, shardB)) shardB = !shardB;
 
     Section("THEVOID: UNCONFIRMED", "TheVoid entries whose effect or 0.35.2 port couldn't be confirmed. Each checks "
                                     "the game code or value first; off puts it back.");
@@ -4106,7 +4106,7 @@ void DangerZoneTab() {
         else Log("Rain/night stores %s", rainNight ? "off" : "back");
     }
     static int engine = 0;
-    ImGui::TextUnformatted("Engine value (0xFBDF5C)");
+    ImGui::TextUnformatted("Engine value (0xFF4EC4)");
     static const char* kEng[] = {"Normal", "0", "1"};
     for (int i = 0; i < 3; i++) {
         if (i) ImGui::SameLine();
@@ -4115,15 +4115,15 @@ void DangerZoneTab() {
         ImGui::PopID();
     }
     Dim("TheVoid's unnamed entry in the engine flame / engine idle sound code: the value it stores on, replaced.");
-    if (Toggle("Unconfirmed byte 0x2F5D028 off", &unknownA,
+    if (Toggle("Unconfirmed byte 0x2FFB7A8 off", &unknownA,
                "TheVoid's unnamed ca21b8 (1 normally). The game reads it in 8 places (through its global offset table); "
                "what it changes isn't worked out yet."))
-        if (!SetSwitch("Byte 0x2F5D028", 0x2F5D028, !unknownA)) unknownA = !unknownA;
-    if (Toggle("Unconfirmed byte 0x34660D9 on", &unknownB,
+        if (!SetSwitch("Byte 0x2FFB7A8", 0x2FFB7A8, !unknownA)) unknownA = !unknownA;
+    if (Toggle("Unconfirmed byte 0x34E4DB9 on", &unknownB,
                "TheVoid's unnamed 4ef60e data half (0 normally). The game reads it at 0x26C14E8, right before TheVoid's "
                "paired code spot 0x26C14F0; what it changes isn't worked out yet."))
-        if (!SetSwitch("Byte 0x34660D9", 0x34660D9, unknownB)) unknownB = !unknownB;
-    Dim("Not added: TheVoid's 0x26C14F0 and 0x143482C patches (no patch value can be worked out for 0.35.2, and a "
+        if (!SetSwitch("Byte 0x34E4DB9", 0x34E4DB9, unknownB)) unknownB = !unknownB;
+    Dim("Not added: TheVoid's 0x26C14F0 and 0x147D994 patches (no patch value can be worked out for 0.35.2, and a "
         "wrong one would break the code there), and player.all_iaps (unlocks paid content without paying).");
 
     Section("ON OTHER PLAYERS", "The social menu's pair actions: they act on the player picked in the social menu "
@@ -4185,7 +4185,7 @@ bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std:
     if (typeIndex >= n) return false;
     std::string name = GameString(t[typeIndex].nameAddr);
     if (name.empty() || Fnv1a(name) != t[typeIndex].nameHash) {
-        Log("Replay: type #%zu's name doesn't match 0.35.2; not started", typeIndex);
+        Log("Replay: type #%zu's name doesn't match 0.35.5; not started", typeIndex);
         return false;
     }
     if (EventStatusOf(typeIndex) != kIsEvent) {
@@ -4389,7 +4389,7 @@ char gVoidFilter[64] = "";
 }  // namespace
 
 void OtherOffsetsTab() {
-    Dim("TheVoid 0.1.2's feature table (Apache-2.0, by Soyu): its names and Sky 0.35.1 addresses, ported to 0.35.2 "
+    Dim("TheVoid 0.1.2's feature table (Apache-2.0, by Soyu): its names and Sky 0.35.1 addresses, ported to 0.35.2 and then 0.35.5 "
         "by matching the game code that uses each one. The last column names the feature using each entry (0.30.0), or "
         "why it was left out (purchase unlocks, or a patch value that isn't known).");
     ImGui::SetNextItemWidth(-1);
@@ -4397,7 +4397,7 @@ void OtherOffsetsTab() {
     if (ImGui::BeginTable("##void", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY |
                                            ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("Name");
-        ImGui::TableSetupColumn("0.35.2");
+        ImGui::TableSetupColumn("0.35.5");
         ImGui::TableSetupColumn("Likely");
         ImGui::TableSetupColumn("Port");
         ImGui::TableSetupColumn("");
@@ -4418,7 +4418,7 @@ void OtherOffsetsTab() {
             ImGui::TableNextColumn();
             if (v.now) ImGui::Text("0x%X %s", v.now, v.kind);
             else ImGui::TextColored(kRed300, "not found");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("0.35.1: 0x%X", v.old352_1);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("0.35.2: 0x%X", v.old352_1);
             ImGui::TableNextColumn();
             ImGui::TextWrapped("%s", *v.hint ? v.hint : "-");
             ImGui::TableNextColumn();

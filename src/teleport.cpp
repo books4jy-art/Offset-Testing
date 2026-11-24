@@ -25,11 +25,11 @@ namespace {
 // Game object (its pointer at 0x33A5E80; GameObject()):
 constexpr uintptr_t kGameAvatarBarn = 0x318;     // Game reflection record "avatarBarn" (built at 0x17C52D8)
 constexpr uintptr_t kGameLevelLinkBarn = 0x528;  // Game reflection record "levelLinkBarn" (built at 0x17C43D8)
-constexpr uintptr_t kGameLevelName = 0x960;      // Game reflection record "levelName" (built at 0x17C2B00)
+constexpr uintptr_t kGameLevelName = 0x958;      // Game reflection record "levelName" (built at 0x17C2B00)
 // AvatarBarn: the game's GetLocalAvatar(barn, true) at 0x11B2BC4 returns barn + 0x30 when the byte at +0xB8A0 is set
 // and bit 3 of the halfword at +0x10A3C is set, else null.
-constexpr uintptr_t kBarnActive = 0xB8A0;
-constexpr uintptr_t kBarnFlags = 0x10A3C;
+constexpr uintptr_t kBarnActive = 0xB8E0;
+constexpr uintptr_t kBarnFlags = 0x10A7C;
 constexpr uintptr_t kBarnLocalAvatar = 0x30;
 constexpr uintptr_t kAvatarPosPtr = 0x18;  // avatar +0x18 -> {x, y, z} (0xFB3934: printed as "pos" "%.2f,%.2f,%.2f")
 constexpr uintptr_t kPosYaw = 0x20;        // float after it: TSM's avatar rotation (yaw); not checked in the code
@@ -682,9 +682,9 @@ bool HoldAvatarAt(const float pos[3]) {
 // The AvatarBarn holds 59 avatar slots inline: slot i is barn + 0x30 + i * 0x10CF0 (0x11AF570); TSM lists slots 0-7 as
 // players and 8-58 as NPCs. A slot is in use when its two "gone" halfwords (+0x10A10, +0x10A12) are 0; bit 0 of
 // +0xB870 marks the local avatar (you). Position: the pointer at slot +0x18 -> {x, y, z}, as for your own avatar.
-constexpr uintptr_t kAvatarStride = 0x10CF0;
+constexpr uintptr_t kAvatarStride = 0x10CB0;
 constexpr int kAvatarSlots = 59, kPlayerSlots = 8;
-constexpr uintptr_t kSlotLocal = 0xB870, kSlotGone1 = 0x10A10, kSlotGone2 = 0x10A12;
+constexpr uintptr_t kSlotLocal = 0xB8B0, kSlotGone1 = 0x10A50, kSlotGone2 = 0x10A52;
 
 struct Person { int slot; float pos[3]; float dist; };
 

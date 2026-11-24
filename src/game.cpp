@@ -88,10 +88,10 @@ EventStatus EventStatusOf(size_t index, std::vector<size_t>* ancestors) {
 
 // Sky 0.35.2 addresses (offsets from the start of libBootloader.so)
 namespace addr {
-constexpr uintptr_t kGamePointer = 0x33A5E80;  // pointer to the game's main object
+constexpr uintptr_t kGamePointer = 0x3422350;  // pointer to the game's main object
 constexpr uintptr_t kGameLuaState = 0x20;      // lua_State* inside the game object
-constexpr uintptr_t kRunLua = 0x29ADFA4;       // int (lua_State*, const char* script), 0 = ok
-constexpr uintptr_t kFrameHook = 0x17BB458;    // called every frame on the game's main thread
+constexpr uintptr_t kRunLua = 0x2A43724;       // int (lua_State*, const char* script), 0 = ok
+constexpr uintptr_t kFrameHook = 0x1802480;    // called every frame on the game's main thread
 constexpr uint32_t kFrameHookFirst = 0xA9BC7BFD;  // its first instruction: stp x29, x30, [sp, #-0x40]!
 }  // namespace addr
 
@@ -296,7 +296,7 @@ void InstallFrameHook() {
     if (!base) return;
     uint32_t first = 0;
     if (!ReadMemory(base + addr::kFrameHook, &first, 4) || first != addr::kFrameHookFirst) {
-        Log("Lua: the frame function isn't what 0.35.2 has (0x%08X); running Lua directly", first);
+        Log("Lua: the frame function isn't what 0.35.5 has (0x%08X); running Lua directly", first);
         gHook = -1;
         return;
     }

@@ -88,13 +88,13 @@ constexpr uintptr_t kSchoolType = 0x84;  // the school's FishSchoolType (byte; r
 // it for each "Create Test ..." button (0x173F940...0x1740C80). ReleaseSchool(barn, school) at 0x17492FC is what its
 // "Clear Test School" calls (0x1740E2C), then it zeroes +0x19B58. On a level unload the barn releases every school and
 // zeroes +0x19B58 itself (OnLevelUnload 0x173BCA4 -> 0x174A308, 0x174A3DC).
-constexpr uint32_t kCreateTestSchool = 0x173C14C, kCreateTestSchoolFirst = 0xD10603FFu;  // sub sp, sp, #0x180
-constexpr uint32_t kReleaseSchool = 0x17492FC, kReleaseSchoolFirst = 0xD10143FFu;        // sub sp, sp, #0x50
-constexpr uint32_t kCountWord = 0x173C1B8, kCountOriginal = 0x52800148u;  // mov w8, #0xa
-constexpr uint32_t kDistWord = 0x173C364, kDistOriginal = 0x4F00F681u;    // fmov v1.4s, #5.0
+constexpr uint32_t kCreateTestSchool = 0x1774B3C, kCreateTestSchoolFirst = 0xD106C3FFu;  // sub sp, sp, #0x180
+constexpr uint32_t kReleaseSchool = 0x17811BC, kReleaseSchoolFirst = 0xD101C3FFu;        // sub sp, sp, #0x50
+constexpr uint32_t kCountWord = 0x1774BA4, kCountOriginal = 0x52800148u;  // mov w8, #0xa
+constexpr uint32_t kDistWord = 0x1774D54, kDistOriginal = 0x4F00F681u;    // fmov v1.4s, #5.0
 // The developers' "Fish Schools" debug window: the barn's update (0x17560D0) calls it (0x173F6E4, at 0x1756898) when
 // this byte is set (kFishSchoolDebug in TheVoid's table; also read at 0x1754460 to draw each school's debug shapes).
-constexpr uint32_t kFishSchoolDebug = 0x3197898;
+constexpr uint32_t kFishSchoolDebug = 0x32137F8;
 
 struct SchoolKind { const char* label; const char* icon; uint8_t type; bool ball; const char* note; };
 // In the debug window's order; types are the game's FishSchoolType values (registered at 0x173CE80...).
@@ -551,7 +551,7 @@ void SpawnTick() {
             case 2: Log("Spawn: test school removed"); break;
             case 3: Log("Spawn: no test school to remove"); break;
             case -1: Log("Spawn %s: the fish school barn isn't there (enter the world first)", w); break;
-            case -2: Log("Spawn %s: the game code isn't what 0.35.2 has; nothing called", w); break;
+            case -2: Log("Spawn %s: the game code isn't what 0.35.5 has; nothing called", w); break;
             case -3: Log("Spawn %s: the barn has no camera yet; try again in the world", w); break;
             case -4: Log("Spawn %s: couldn't set the count / distance; nothing spawned", w); break;
             case -5: Log("Spawn %s: the game made no school (it may not load that kind here)", w); break;
@@ -701,7 +701,7 @@ void SpawnTab() {
         if (ImGui::Button("Remove##nd", ImVec2(-1, 0))) ShardnadoOff();
         ImGui::EndDisabled();
         Dim("Shardnado: dark shards orbiting a point in front of you (orbit from half the radius to the radius, the "
-            "game's 0.3-0.6 orbit rates). It pushes and shocks your avatar when you're in it (0x1DF5CA8). One at a "
+            "game's 0.3-0.6 orbit rates). It pushes and shocks your avatar when you're in it (0x1E52AE8). One at a "
             "time; Remove switches it off. At most %d per level (%d this level).",
             kMaxNados, T.nadosThisLevel);
 
@@ -736,25 +736,25 @@ void SpawnTab() {
         Section("NOT OFFERED", "Kinds without a safe way to make them from the mod, and what TSM does instead.");
         NotOffered("UiHudStarSplit0", "ShardFall / MeteorFall on their own",
                    "No settings: the shard count (+0x60) and meshes are filled by the eruption system or by "
-                   "ManualShardFall. Made from Lua the count is 0 and they do nothing (0x19CEA94). TSM's \"Spawn "
+                   "ManualShardFall. Made from Lua the count is 0 and they do nothing (0x1A1AA5C). TSM's \"Spawn "
                    "Shard\" is ManualShardFall with one marker, the same route as Shard fall above.");
         NotOffered("UiEmoteButterfly", "Light motes (SpawnMotes, SpawnLiftMotes)",
                    "MoteParams.new() works, but both events stop themselves once their motes are made (0x1A233B4, "
-                   "0x1A18B04 -> 0x171F82C) and hand them to the mote barn; nothing takes them back, so they couldn't "
+                   "0x1581C1C -> 0x171F82C) and hand them to the mote barn; nothing takes them back, so they couldn't "
                    "be removed until the level changes (and the constructor leaves railEndAction, +0x38, unset). TSM "
                    "doesn't use them: its butterflies are MusicalMoteTarget, which calls motes the level already has "
                    "(and lifts you). Butterflies are offered above.");
         NotOffered("UiMapSpirit", "NPCs / spirits (NpcDefs)",
-                   "NpcBarn:CreateNpc exists, but an NPC is set up only by the barn's OnLevelLoadLate (0x1AA9C68 -> "
-                   "0x1AAC670) while the level loads; one made later isn't. TSM doesn't make NPCs either: its NPC rows "
+                   "NpcBarn:CreateNpc exists, but an NPC is set up only by the barn's OnLevelLoadLate (0x1AF64C0 -> "
+                   "0x1AF90C0) while the level loads; one made later isn't. TSM doesn't make NPCs either: its NPC rows "
                    "show the level's own, and its \"Summon ... Whisperer\" buttons are the trust companion barn's "
-                   "developer tweaks (ChooseLighthorn..., 0x24B9BD8), a season companion with a server-kept daily limit.");
+                   "developer tweaks (ChooseLighthorn..., 0x252304C), a season companion with a server-kept daily limit.");
         NotOffered("UiMenuBuffKrillCurse", "Krill / dark creatures, dark dragons",
                    "Turn on Invincibility (Features > Energy) first: they can knock off your winged light. But they "
                    "can't be made safely: DarkCreatureBarn:CreateDarkCreature only hands out one of 12 slots (0x15A0014; "
-                   "a 13th aborts the game) and a creature is set up only by the barn's OnLevelLoad (0x159B80C -> "
-                   "0x159B894: meshes, animations), which also needs its params' patrol and cooldown rails (from level "
-                   "files) and is networked by default. LurkerBarn:CreateLurker is the same with 3 slots (0x1938B4C). "
+                   "a 13th aborts the game) and a creature is set up only by the barn's OnLevelLoad (0x15EB100 -> "
+                   "0x15E9848: meshes, animations), which also needs its params' patrol and cooldown rails (from level "
+                   "files) and is networked by default. LurkerBarn:CreateLurker is the same with 3 slots (0x198336C). "
                    "TSM doesn't spawn them: it only has Freeze Krill and Anti Krill (the game's tame switch).");
         NotOffered("UiEmoteCallFish", "Collectible fish (CollectibleFishClump)",
                    "Collectible fish are pickups; collecting them may change what your account holds.");
@@ -767,7 +767,7 @@ void SpawnTab() {
         }
         ImGui::Indent(ImGui::GetFrameHeight() + 8);
         Dim("The game's kFishSchoolDebug switch (byte 0x%X, 0 normally; TheVoid's table): the fish school barn then "
-            "opens the developers' \"Fish Schools\" window each frame (0x173F6E4: Create Test Birds ... Clear Test "
+            "opens the developers' \"Fish Schools\" window each frame (0x178522C: Create Test Birds ... Clear Test "
             "School, the same calls as above) and draws each school's debug shapes. Whether that window shows "
             "depends on the game drawing its debug UI in this build. Off puts 0 back.",
             kFishSchoolDebug);
