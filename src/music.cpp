@@ -57,7 +57,7 @@ bool CheckFunctions() {
 
 bool StartLearning() {
     if (!CheckFunctions()) {
-        Log("Custom songs: the game's key functions aren't what 0.35.5 has; not hooked");
+        Log("Custom songs: the game's key functions aren't what 0.35.6 has; not hooked");
         return false;
     }
     if (!gHooked) {
@@ -239,7 +239,7 @@ void CustomSongsSection() {
     ImGui::BeginDisabled(gSel < 0 || learned == 0);
     if (ImGui::Button(gPlaying ? "Restart" : "Play")) {
         if (CheckFunctions()) gPlaying = true, gStart = ImGui::GetTime(), gNext = 0;
-        else Log("Custom songs: the game's key functions aren't what 0.35.5 has");
+        else Log("Custom songs: the game's key functions aren't what 0.35.6 has");
     }
     ImGui::EndDisabled();
     ImGui::SameLine();

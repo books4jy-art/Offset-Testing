@@ -555,7 +555,7 @@ bool SetFirstPerson(bool on) {
         uint32_t first = 0;
         uintptr_t a = GameBase() + 0x29B6000;
         if (!GameBase() || !ReadMemory(a, &first, 4) || first != 0xD10343FFu) {
-            Log("First-person view: the camera function isn't what 0.35.5 has (0x%08X)", first);
+            Log("First-person view: the camera function isn't what 0.35.6 has (0x%08X)", first);
             return false;
         }
         if (DobbyInstrument(reinterpret_cast<void*>(a), FpvHook) != 0) {
@@ -572,7 +572,7 @@ bool SetFirstPerson(bool on) {
 bool SetNoCollision(bool on) {
     uint32_t cur = 0;
     if (!GameBase() || !ReadMemory(GameBase() + kCollisionCallAt, &cur, 4) || (cur != kCollisionCall && cur != kNop)) {
-        Log("No collision: the game code isn't what 0.35.5 has (0x%08X); not changed", cur);
+        Log("No collision: the game code isn't what 0.35.6 has (0x%08X); not changed", cur);
         return false;
     }
     uint32_t v = on ? kNop : kCollisionCall;
@@ -2796,7 +2796,7 @@ const CodePatch kReadPatches[2] = {
 bool SetCodePatch(const CodePatch& p, bool on) {
     uint32_t cur = 0;
     if (!GameBase() || !ReadMemory(GameBase() + p.at, &cur, 4) || (cur != p.original && cur != p.patched)) {
-        Log("%s: the game code at 0x%X isn't what 0.35.5 has (0x%08X); not changed", p.what, p.at, cur);
+        Log("%s: the game code at 0x%X isn't what 0.35.6 has (0x%08X); not changed", p.what, p.at, cur);
         return false;
     }
     uint32_t v = on ? p.patched : p.original;
@@ -3303,7 +3303,7 @@ bool SetTree(int levels) {
     bool w0ok = cur[0] == kTierOriginal[0] || cur[0] == kNop;
     bool w1ok = cur[1] == kTierOriginal[1] || (cur[1] & 0xFFE0001F) == 0x52800000u;
     if (!w0ok || !w1ok) {
-        Log("Friendship tree: the game code at 0x%X isn't what 0.35.5 has; not changed", kTierAt[0]);
+        Log("Friendship tree: the game code at 0x%X isn't what 0.35.6 has; not changed", kTierAt[0]);
         return false;
     }
     if (levels > 0) {
@@ -3785,7 +3785,7 @@ bool SetDarkStone(int choice) {
             for (int k = 1; k < 4; k++) known |= cur[i] == kDarkStoneVal[k];
         }
         if (!known) {
-            Log("Dark-stone value: the game code at 0x%X isn't what 0.35.5 has; not changed", kDarkStoneAt[i]);
+            Log("Dark-stone value: the game code at 0x%X isn't what 0.35.6 has; not changed", kDarkStoneAt[i]);
             return false;
         }
     }
@@ -4052,7 +4052,7 @@ bool SetEngine(int choice) {
     uint32_t cur = 0;
     if (!GameBase() || !ReadMemory(GameBase() + kEngineAt, &cur, 4) ||
         (cur != kEngineOrig && cur != kEngineVal[1] && cur != kEngineVal[2])) {
-        Log("Engine value: the game code at 0x%X isn't what 0.35.5 has; not changed", kEngineAt);
+        Log("Engine value: the game code at 0x%X isn't what 0.35.6 has; not changed", kEngineAt);
         return false;
     }
     uint32_t v = choice ? kEngineVal[choice] : kEngineOrig;
@@ -4185,7 +4185,7 @@ bool ReplayEvent(size_t typeIndex, const std::vector<std::pair<std::string, std:
     if (typeIndex >= n) return false;
     std::string name = GameString(t[typeIndex].nameAddr);
     if (name.empty() || Fnv1a(name) != t[typeIndex].nameHash) {
-        Log("Replay: type #%zu's name doesn't match 0.35.5; not started", typeIndex);
+        Log("Replay: type #%zu's name doesn't match 0.35.6; not started", typeIndex);
         return false;
     }
     if (EventStatusOf(typeIndex) != kIsEvent) {
@@ -4397,7 +4397,7 @@ void OtherOffsetsTab() {
     if (ImGui::BeginTable("##void", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY |
                                            ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("Name");
-        ImGui::TableSetupColumn("0.35.5");
+        ImGui::TableSetupColumn("0.35.6");
         ImGui::TableSetupColumn("Likely");
         ImGui::TableSetupColumn("Port");
         ImGui::TableSetupColumn("");

@@ -551,7 +551,7 @@ void SpawnTick() {
             case 2: Log("Spawn: test school removed"); break;
             case 3: Log("Spawn: no test school to remove"); break;
             case -1: Log("Spawn %s: the fish school barn isn't there (enter the world first)", w); break;
-            case -2: Log("Spawn %s: the game code isn't what 0.35.5 has; nothing called", w); break;
+            case -2: Log("Spawn %s: the game code isn't what 0.35.6 has; nothing called", w); break;
             case -3: Log("Spawn %s: the barn has no camera yet; try again in the world", w); break;
             case -4: Log("Spawn %s: couldn't set the count / distance; nothing spawned", w); break;
             case -5: Log("Spawn %s: the game made no school (it may not load that kind here)", w); break;

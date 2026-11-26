@@ -344,7 +344,7 @@ void LoadNames() {
         events += S.evStatus[i] == kIsEvent;
         unknown += S.evStatus[i] == kEventUnknown;
     }
-    Log("Read %d type names (%d match 0.35.5, %d unreadable); %d are events, %d unknown", (int)n, S.verified,
+    Log("Read %d type names (%d match 0.35.6, %d unreadable); %d are events, %d unknown", (int)n, S.verified,
         S.unreadable, events, unknown);
 }
 
@@ -661,7 +661,7 @@ void Details(int i) {
     ImGui::PopStyleColor();
     Dim("%s  ·  %s", S.names[i].c_str(), kAreaNames[t.area]);
     if (Fnv1a(S.names[i]) != t.nameHash)
-        ImGui::TextColored(kAmber300, "This name doesn't match Sky 0.35.5: the offsets may be wrong for this game version.");
+        ImGui::TextColored(kAmber300, "This name doesn't match Sky 0.35.6: the offsets may be wrong for this game version.");
 
     // what it does
     ImGui::Spacing();
@@ -891,7 +891,7 @@ void GameFunctionsTab() {
         rows.push_back((int)i);
     }
     int nEvents = (int)std::count(S.evStatus.begin(), S.evStatus.end(), (int8_t)kIsEvent);
-    Dim("%zu shown  ·  %d events of %zu types  ·  %d names checked against 0.35.5", rows.size(), nEvents, n, S.verified);
+    Dim("%zu shown  ·  %d events of %zu types  ·  %d names checked against 0.35.6", rows.size(), nEvents, n, S.verified);
 
     // list: two-line rows (readable title, then the game's name and area)
     float listH = ImGui::GetContentRegionAvail().y * 0.38f;
@@ -1181,7 +1181,7 @@ void RecSave() {
         S.recMsg = "Couldn't find the mod's folder to save in";
         return;
     }
-    std::string t = "Offset Lab event recording (Sky 0.35.5)\n";
+    std::string t = "Offset Lab event recording (Sky 0.35.6)\n";
     char b[256];
     snprintf(b, sizeof b, "%zu rows, %" PRIu64 " starts%s\n", S.rec.size(), S.recTotal,
              RecorderDropped() ? " (some were missed: the game started events faster than they were read)" : "");
@@ -1505,7 +1505,7 @@ void Draw(bool* open) {
 
     Eyebrow("SKY MESH LAB");
     ImGui::SameLine();
-    Dim("Offset Lab · Sky 0.35.5 · experimental");
+    Dim("Offset Lab · Sky 0.35.6 · experimental");
     uintptr_t base = GameBase(), game = GameObject();
     ImGui::TextColored(base ? kSky300 : kRed300, "%s", base ? "Game library loaded" : "Game library not found");
     ImGui::SameLine();
